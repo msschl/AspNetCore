@@ -4,6 +4,7 @@
 using System;
 using System.IO;
 using System.Net.Http;
+using System.Runtime.InteropServices;
 using System.Security.Authentication;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
@@ -12,12 +13,12 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Connections.Features;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;
-using Microsoft.AspNetCore.Testing.xunit;
+using Microsoft.AspNetCore.HttpSys.Internal;
+using Microsoft.AspNetCore.Testing;
 using Xunit;
 
 namespace Microsoft.AspNetCore.Server.HttpSys
 {
-    [SkipOnHelix] // https://github.com/aspnet/AspNetCore-Internal/issues/1816
     public class HttpsTests
     {
         [ConditionalFact]
@@ -102,7 +103,7 @@ namespace Microsoft.AspNetCore.Server.HttpSys
         }
 
         [ConditionalFact]
-        [OSDontSkipCondition(OperatingSystems.Windows, WindowsVersions.Win7, WindowsVersions.Win2008R2)]
+        [MaximumOSVersion(OperatingSystems.Windows, WindowsVersions.Win7)]
         public async Task Https_SkipsITlsHandshakeFeatureOnWin7()
         {
             using (Utilities.CreateDynamicHttpsServer(out var address, async httpContext =>
@@ -124,7 +125,7 @@ namespace Microsoft.AspNetCore.Server.HttpSys
         }
 
         [ConditionalFact]
-        [OSSkipCondition(OperatingSystems.Windows, WindowsVersions.Win7, WindowsVersions.Win2008R2)]
+        [MinimumOSVersion(OperatingSystems.Windows, WindowsVersions.Win8)]
         public async Task Https_SetsITlsHandshakeFeature()
         {
             using (Utilities.CreateDynamicHttpsServer(out var address, async httpContext =>
@@ -153,19 +154,57 @@ namespace Microsoft.AspNetCore.Server.HttpSys
             }
         }
 
+        [ConditionalFact]
+        [MinimumOSVersion(OperatingSystems.Windows, WindowsVersions.Win8)]
+        public async Task Https_ITlsHandshakeFeature_MatchesIHttpSysExtensionInfoFeature()
+        {
+            using (Utilities.CreateDynamicHttpsServer(out var address, async httpContext =>
+            {
+                try
+                {
+                    var tlsFeature = httpContext.Features.Get<ITlsHandshakeFeature>();
+                    var requestInfoFeature = httpContext.Features.Get<IHttpSysRequestInfoFeature>();
+                    Assert.NotNull(tlsFeature);
+                    Assert.NotNull(requestInfoFeature);
+                    Assert.True(requestInfoFeature.RequestInfo.Count > 0);
+                    var tlsInfo = requestInfoFeature.RequestInfo[(int)HttpApiTypes.HTTP_REQUEST_INFO_TYPE.HttpRequestInfoTypeSslProtocol];
+                    HttpApiTypes.HTTP_SSL_PROTOCOL_INFO tlsCopy;
+                    unsafe
+                    {
+                        using var handle = tlsInfo.Pin();
+                        tlsCopy = Marshal.PtrToStructure<HttpApiTypes.HTTP_SSL_PROTOCOL_INFO>((IntPtr)handle.Pointer);
+                    }
+
+                    // Assert.Equal(tlsFeature.Protocol, tlsCopy.Protocol); // These don't directly match because the native and managed enums use different values.
+                    Assert.Equal(tlsFeature.CipherAlgorithm, tlsCopy.CipherType);
+                    Assert.Equal(tlsFeature.CipherStrength, (int)tlsCopy.CipherStrength);
+                    Assert.Equal(tlsFeature.HashAlgorithm, tlsCopy.HashType);
+                    Assert.Equal(tlsFeature.HashStrength, (int)tlsCopy.HashStrength);
+                    Assert.Equal(tlsFeature.KeyExchangeAlgorithm, tlsCopy.KeyExchangeType);
+                    Assert.Equal(tlsFeature.KeyExchangeStrength, (int)tlsCopy.KeyExchangeStrength);
+                }
+                catch (Exception ex)
+                {
+                    await httpContext.Response.WriteAsync(ex.ToString());
+                }
+            }))
+            {
+                string response = await SendRequestAsync(address);
+                Assert.Equal(string.Empty, response);
+            }
+        }
+
         private async Task<string> SendRequestAsync(string uri,
             X509Certificate cert = null)
         {
-            var handler = new WinHttpHandler();
-            handler.ServerCertificateValidationCallback = (a, b, c, d) => true;
+            var handler = new HttpClientHandler();
+            handler.ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator;
             if (cert != null)
             {
                 handler.ClientCertificates.Add(cert);
             }
-            using (HttpClient client = new HttpClient(handler))
-            {
-                return await client.GetStringAsync(uri);
-            }
+            using HttpClient client = new HttpClient(handler);
+            return await client.GetStringAsync(uri);
         }
 
         private async Task<string> SendRequestAsync(string uri, string upload)

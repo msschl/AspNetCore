@@ -1,14 +1,13 @@
 // Copyright (c) .NET Foundation. All rights reserved.
 // Licensed under the Apache License, Version 2.0. See License.txt in the project root for license information.
 
+using System;
 using BasicTestApp;
-using Microsoft.AspNetCore.Components.Browser.Rendering;
-using Microsoft.AspNetCore.Components.E2ETest.Infrastructure;
 using Microsoft.AspNetCore.Components.E2ETest.Infrastructure.ServerFixtures;
 using Microsoft.AspNetCore.Components.E2ETest.Tests;
+using Microsoft.AspNetCore.E2ETesting;
 using OpenQA.Selenium;
-using System;
-using System.Threading.Tasks;
+using OpenQA.Selenium.Support.UI;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -27,13 +26,13 @@ namespace Microsoft.AspNetCore.Components.E2ETest.ServerExecutionTests
         [Fact]
         public void ThrowsIfRenderIsRequestedOutsideSyncContext()
         {
-            var appElement = MountTestComponent<DispatchingComponent>();
+            var appElement = Browser.MountTestComponent<DispatchingComponent>();
             var result = appElement.FindElement(By.Id("result"));
 
             appElement.FindElement(By.Id("run-without-dispatch")).Click();
 
-            WaitAssert.Contains(
-                $"{typeof(InvalidOperationException).FullName}: The current thread is not associated with the renderer's synchronization context",
+            Browser.Contains(
+                $"{typeof(InvalidOperationException).FullName}: The current thread is not associated with the Dispatcher. Use InvokeAsync() to switch execution to the Dispatcher when triggering rendering or component state.",
                 () => result.Text);
         }
     }

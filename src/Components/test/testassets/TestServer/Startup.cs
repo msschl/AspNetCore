@@ -1,6 +1,7 @@
-using Microsoft.AspNetCore.Components.Server;
+using System.IO;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -19,12 +20,7 @@ namespace TestServer
         // This method gets called by the runtime. Use this method to add services to the container.
         public void ConfigureServices(IServiceCollection services)
         {
-            services.AddMvc().AddNewtonsoftJson();
-            services.AddCors(options =>
-            {
-                options.AddPolicy("AllowAll", _ => { /* Controlled below */ });
-            });
-            services.AddRazorComponents<BasicTestApp.Startup>();
+            services.AddSingleton<TestAppInfo>();
         }
 
         // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
@@ -35,44 +31,45 @@ namespace TestServer
                 app.UseDeveloperExceptionPage();
             }
 
-            AllowCorsForAnyLocalhostPort(app);
-            app.UseMvc();
-
-            // Mount the server-side Blazor app on /subdir
-            app.Map("/subdir", subdirApp =>
+            app.Run(async ctx =>
             {
-                // The following two lines are equivalent to:
-                //     subdirApp.UseServerSideBlazor<BasicTestApp.Startup>();
-                // However it's expressed using UseSignalR+UseBlazor as a way of checking that
-                // we're not relying on any extra magic inside UseServerSideBlazor, since it's
-                // important that people can set up these bits of middleware manually (e.g., to
-                // swap in UseAzureSignalR instead of UseSignalR).
-                subdirApp.UseSignalR(route => route.MapHub<ComponentsHub>(ComponentsHub.DefaultPath));
-                subdirApp.UseBlazor<BasicTestApp.Startup>();
-            });
-        }
-
-        private static void AllowCorsForAnyLocalhostPort(IApplicationBuilder app)
-        {
-            // It's not enough just to return "Access-Control-Allow-Origin: *", because
-            // browsers don't allow wildcards in conjunction with credentials. So we must
-            // specify explicitly which origin we want to allow.
-            app.Use((context, next) =>
-            {
-                if (context.Request.Headers.TryGetValue("origin", out var incomingOriginValue))
+                var appsInfo = ctx.RequestServices.GetRequiredService<TestAppInfo>();
+                var response = ctx.Response.ContentType = "text/html;charset=utf-8";
+                using var writer = new StringWriter();
+                await writer.WriteAsync(@"<!DOCTYPE html>
+<html>
+  <head>
+    <title>Blazor test server index</title>
+  </head>
+  <body>
+    <table>
+      <tr>
+        <th>Scenario</th>
+        <th>
+          <Link>Link</Link>
+        </th>
+      </tr>
+");
+                foreach (var scenario in appsInfo.Scenarios)
                 {
-                    var origin = incomingOriginValue.ToArray()[0];
-                    if (origin.StartsWith("http://localhost:") || origin.StartsWith("http://127.0.0.1:"))
-                    {
-                        context.Response.Headers.Add("Access-Control-Allow-Origin", origin);
-                        context.Response.Headers.Add("Access-Control-Allow-Credentials", "true");
-                        context.Response.Headers.Add("Access-Control-Allow-Methods", "HEAD,GET,PUT,POST,DELETE,OPTIONS");
-                        context.Response.Headers.Add("Access-Control-Allow-Headers", "Content-Type,TestHeader,another-header");
-                        context.Response.Headers.Add("Access-Control-Expose-Headers", "MyCustomHeader,TestHeader,another-header");
-                    }
+                    await writer.WriteAsync(@$"
+      <tr>
+        <td>{scenario.Key}</td>
+        <td><a href=""{scenario.Value}"">{scenario.Value}</a></td>
+      </tr>
+");
                 }
-
-                return next();
+                await writer.WriteAsync(@"
+    </table>
+    <style>
+        table, th, td, tr { border: 1px solid black; }
+        th { font-weight: bold; }
+    <style>
+  </body>
+</html>");
+                var content = writer.ToString();
+                ctx.Response.ContentLength = content.Length;
+                await ctx.Response.WriteAsync(content);
             });
         }
     }

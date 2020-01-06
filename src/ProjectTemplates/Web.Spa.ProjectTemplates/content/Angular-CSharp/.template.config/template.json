@@ -6,7 +6,8 @@
     "SPA"
   ],
   "groupIdentity": "Microsoft.DotNet.Web.Spa.ProjectTemplates.Angular",
-  "identity": "Microsoft.DotNet.Web.Spa.ProjectTemplates.Angular.CSharp.3.0",
+  "precedence": "6000",
+  "identity": "Microsoft.DotNet.Web.Spa.ProjectTemplates.Angular.CSharp.3.1",
   "name": "ASP.NET Core with Angular",
   "preferNameDirectory": true,
   "primaryOutputs": [
@@ -23,22 +24,88 @@
       "exclude": [
         ".template.config/**"
       ],
+      "copyOnly": [
+        "wwwroot/**"
+      ],
       "modifiers": [
+        {
+          "condition": "(!IndividualLocalAuth)",
+          "exclude": [
+            "Pages/Shared/_LoginPartial.cshtml",
+            "Data/**",
+            "Models/**",
+            "ClientApp/src/api-authorization/**",
+            "Controllers/OidcConfigurationController.cs"
+          ]
+        },
+        {
+          "condition": "(!IndividualLocalAuth || UseLocalDB)",
+          "exclude": [
+            "app.db"
+          ]
+        },
         {
           "condition": "(ExcludeLaunchSettings)",
           "exclude": [
             "Properties/launchSettings.json"
+          ]
+        },
+        {
+          "condition": "(IndividualLocalAuth && UseLocalDB)",
+          "rename": {
+            "Data/SQLServer/": "Data/Migrations/"
+          },
+          "exclude": [
+            "Data/SQLite/**"
+          ]
+        },
+        {
+          "condition": "(IndividualLocalAuth && !UseLocalDB)",
+          "rename": {
+            "Data/SQLite/": "Data/Migrations/"
+          },
+          "exclude": [
+            "Data/SQLServer/**"
           ]
         }
       ]
     }
   ],
   "symbols": {
+    "auth": {
+      "type": "parameter",
+      "datatype": "choice",
+      "choices": [
+        {
+          "choice": "None",
+          "description": "No authentication"
+        },
+        {
+          "choice": "Individual",
+          "description": "Individual authentication"
+        }
+      ],
+      "defaultValue": "None",
+      "description": "The type of authentication to use"
+    },
+    "UserSecretsId": {
+      "type": "parameter",
+      "datatype": "string",
+      "replaces": "aspnet-Company.WebApplication1-53bc9b9d-9d6a-45d4-8429-2a2761773502",
+      "defaultValue": "aspnet-Company.WebApplication1-53bc9b9d-9d6a-45d4-8429-2a2761773502",
+      "description": "The ID to use for secrets (use with OrgReadAccess or Individual auth)."
+    },
     "ExcludeLaunchSettings": {
       "type": "parameter",
       "datatype": "bool",
       "defaultValue": "false",
-      "description": "Whether to exclude launchSettings.json from the generated template."
+      "description": "Whether to exclude launchSettings.json in the generated template."
+    },
+    "skipRestore": {
+      "type": "parameter",
+      "datatype": "bool",
+      "description": "If specified, skips the automatic restore of the project on create.",
+      "defaultValue": "false"
     },
     "HttpPort": {
       "type": "parameter",
@@ -61,7 +128,7 @@
     "HttpsPort": {
       "type": "parameter",
       "datatype": "integer",
-      "description": "Port number to use for the HTTPS endpoint in launchSettings.json. This option is only applicable when the parameter no-https is not used (no-https will be ignored if either IndividualAuth or OrganizationalAuth is used)."
+      "description": "Port number to use for the HTTPS endpoint in launchSettings.json. This option is only applicable when the parameter no-https is not used (no-https will be ignored if IndividualLocalAuth is used)."
     },
     "HttpsPortGenerated": {
       "type": "generated",
@@ -80,34 +147,46 @@
       },
       "replaces": "44300"
     },
-    "Framework": {
-      "type": "parameter",
-      "description": "The target framework for the project.",
-      "datatype": "choice",
-      "choices": [
-        {
-          "choice": "netcoreapp3.0",
-          "description": "Target netcoreapp3.0"
-        }
-      ],
-      "replaces": "netcoreapp3.0",
-      "defaultValue": "netcoreapp3.0"
+    "IndividualLocalAuth": {
+      "type": "computed",
+      "value": "(auth == \"Individual\")"
     },
-    "HostIdentifier": {
-      "type": "bind",
-      "binding": "HostIdentifier"
+    "NoAuth": {
+      "type": "computed",
+      "value": "(!(IndividualLocalAuth))"
     },
-    "skipRestore": {
-      "type": "parameter",
-      "datatype": "bool",
-      "description": "If specified, skips the automatic restore of the project on create.",
-      "defaultValue": "false"
+    "RequiresHttps": {
+      "type": "computed",
+      "value": "(IndividualLocalAuth || !NoHttps)"
     },
     "NoHttps": {
       "type": "parameter",
       "datatype": "bool",
       "defaultValue": "false",
       "description": "Whether to turn off HTTPS. This option only applies if Individual, IndividualB2C, SingleOrg, or MultiOrg aren't used for --auth."
+    },
+    "UseLocalDB": {
+      "type": "parameter",
+      "datatype": "bool",
+      "defaultValue": "false",
+      "description": "Whether to use LocalDB instead of SQLite. This option only applies if --auth Individual or --auth IndividualB2C is specified."
+    },
+    "Framework": {
+      "type": "parameter",
+      "description": "The target framework for the project.",
+      "datatype": "choice",
+      "choices": [
+        {
+          "choice": "netcoreapp5.0",
+          "description": "Target netcoreapp5.0"
+        }
+      ],
+      "replaces": "netcoreapp5.0",
+      "defaultValue": "netcoreapp5.0"
+    },
+    "HostIdentifier": {
+      "type": "bind",
+      "binding": "HostIdentifier"
     }
   },
   "tags": {

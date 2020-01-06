@@ -94,6 +94,47 @@ namespace Microsoft.AspNetCore.Mvc.FunctionalTests
         }
 
         [Fact]
+        public async Task AttributeRoutedAction_InArea_StaysInArea_ActionDoesntExist()
+        {
+            // Arrange
+            var url = LinkFrom("http://localhost/ContosoCorp/Trains")
+                .To(new { action = "Contact", controller = "Home", });
+
+            // Act
+            var response = await Client.GetAsync(url);
+
+            // Assert
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            var body = await response.Content.ReadAsStringAsync();
+            var result = JsonConvert.DeserializeObject<RoutingResult>(body);
+
+            Assert.Equal("Rail", result.Controller);
+            Assert.Equal("Index", result.Action);
+
+            Assert.Equal("/Travel/Home/Contact", result.Link);
+        }
+
+        [Fact]
+        public async Task ConventionalRoutedAction_InArea_StaysInArea()
+        {
+            // Arrange
+            var url = LinkFrom("http://localhost/Travel/Flight").To(new { action = "Contact", controller = "Home", });
+
+            // Act
+            var response = await Client.GetAsync(url);
+
+            // Assert
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            var body = await response.Content.ReadAsStringAsync();
+            var result = JsonConvert.DeserializeObject<RoutingResult>(body);
+
+            Assert.Equal("Flight", result.Controller);
+            Assert.Equal("Index", result.Action);
+
+            Assert.Equal("/Travel/Home/Contact", result.Link);
+        }
+
+        [Fact]
         public abstract Task HasEndpointMatch();
 
         [Fact]
@@ -1533,6 +1574,17 @@ namespace Microsoft.AspNetCore.Mvc.FunctionalTests
             Assert.Equal("Hello from middleware after routing", content);
         }
 
+        [Fact]
+        public async Task CanUseLinkGeneration_To_ConventionalActionWithPageParameter()
+        {
+            // Act
+            var response = await Client.GetAsync("/PageParameter/LinkToPageParameter");
+
+            // Assert
+            await response.AssertStatusCodeAsync(HttpStatusCode.OK);
+            var content = await response.Content.ReadAsStringAsync();
+            Assert.Equal("/PageParameter/PageParameter?page=17", content);
+        }
 
         protected static LinkBuilder LinkFrom(string url)
         {

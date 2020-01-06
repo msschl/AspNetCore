@@ -7,6 +7,10 @@ import { NullLogger } from "./Loggers";
 import { IStreamSubscriber, ISubscription } from "./Stream";
 import { Subject } from "./Subject";
 
+// Version token that will be replaced by the prepack command
+/** The version of the SignalR client. */
+export const VERSION: string = "0.0.0-DEV_BUILD";
+
 /** @private */
 export class Arg {
     public static isRequired(val: any, name: string): void {
@@ -25,7 +29,6 @@ export class Arg {
 
 /** @private */
 export class Platform {
-
     public static get isBrowser(): boolean {
         return typeof window === "object";
     }
@@ -76,13 +79,14 @@ export function formatArrayBuffer(data: ArrayBuffer): string {
 export function isArrayBuffer(val: any): val is ArrayBuffer {
     return val && typeof ArrayBuffer !== "undefined" &&
         (val instanceof ArrayBuffer ||
-        // Sometimes we get an ArrayBuffer that doesn't satisfy instanceof
-        (val.constructor && val.constructor.name === "ArrayBuffer"));
+            // Sometimes we get an ArrayBuffer that doesn't satisfy instanceof
+            (val.constructor && val.constructor.name === "ArrayBuffer"));
 }
 
 /** @private */
-export async function sendMessage(logger: ILogger, transportName: string, httpClient: HttpClient, url: string, accessTokenFactory: (() => string | Promise<string>) | undefined, content: string | ArrayBuffer, logMessageContent: boolean): Promise<void> {
-    let headers;
+export async function sendMessage(logger: ILogger, transportName: string, httpClient: HttpClient, url: string, accessTokenFactory: (() => string | Promise<string>) | undefined,
+                                  content: string | ArrayBuffer, logMessageContent: boolean, withCredentials: boolean): Promise<void> {
+    let headers = {};
     if (accessTokenFactory) {
         const token = await accessTokenFactory();
         if (token) {
@@ -92,6 +96,9 @@ export async function sendMessage(logger: ILogger, transportName: string, httpCl
         }
     }
 
+    const [name, value] = getUserAgentHeader();
+    headers[name] = value;
+
     logger.log(LogLevel.Trace, `(${transportName} transport) sending data. ${getDataDetail(content, logMessageContent)}.`);
 
     const responseType = isArrayBuffer(content) ? "arraybuffer" : "text";
@@ -99,6 +106,7 @@ export async function sendMessage(logger: ILogger, transportName: string, httpCl
         content,
         headers,
         responseType,
+        withCredentials,
     });
 
     logger.log(LogLevel.Trace, `(${transportName} transport) request complete. Response status: ${response.statusCode}.`);
@@ -147,8 +155,17 @@ export class SubjectSubscription<T> implements ISubscription<T> {
 export class ConsoleLogger implements ILogger {
     private readonly minimumLogLevel: LogLevel;
 
+    // Public for testing purposes.
+    public outputConsole: {
+        error(message: any): void,
+        warn(message: any): void,
+        info(message: any): void,
+        log(message: any): void,
+    };
+
     constructor(minimumLogLevel: LogLevel) {
         this.minimumLogLevel = minimumLogLevel;
+        this.outputConsole = console;
     }
 
     public log(logLevel: LogLevel, message: string): void {
@@ -156,19 +173,87 @@ export class ConsoleLogger implements ILogger {
             switch (logLevel) {
                 case LogLevel.Critical:
                 case LogLevel.Error:
-                    console.error(`[${new Date().toISOString()}] ${LogLevel[logLevel]}: ${message}`);
+                    this.outputConsole.error(`[${new Date().toISOString()}] ${LogLevel[logLevel]}: ${message}`);
                     break;
                 case LogLevel.Warning:
-                    console.warn(`[${new Date().toISOString()}] ${LogLevel[logLevel]}: ${message}`);
+                    this.outputConsole.warn(`[${new Date().toISOString()}] ${LogLevel[logLevel]}: ${message}`);
                     break;
                 case LogLevel.Information:
-                    console.info(`[${new Date().toISOString()}] ${LogLevel[logLevel]}: ${message}`);
+                    this.outputConsole.info(`[${new Date().toISOString()}] ${LogLevel[logLevel]}: ${message}`);
                     break;
                 default:
                     // console.debug only goes to attached debuggers in Node, so we use console.log for Trace and Debug
-                    console.log(`[${new Date().toISOString()}] ${LogLevel[logLevel]}: ${message}`);
+                    this.outputConsole.log(`[${new Date().toISOString()}] ${LogLevel[logLevel]}: ${message}`);
                     break;
             }
         }
+    }
+}
+
+/** @private */
+export function getUserAgentHeader(): [string, string] {
+    let userAgentHeaderName = "X-SignalR-User-Agent";
+    if (Platform.isNode) {
+        userAgentHeaderName = "User-Agent";
+    }
+    return [ userAgentHeaderName, constructUserAgent(VERSION, getOsName(), getRuntime(), getRuntimeVersion()) ];
+}
+
+/** @private */
+export function constructUserAgent(version: string, os: string, runtime: string, runtimeVersion: string | undefined): string {
+    // Microsoft SignalR/[Version] ([Detailed Version]; [Operating System]; [Runtime]; [Runtime Version])
+    let userAgent: string = "Microsoft SignalR/";
+
+    const majorAndMinor = version.split(".");
+    userAgent += `${majorAndMinor[0]}.${majorAndMinor[1]}`;
+    userAgent += ` (${version}; `;
+
+    if (os && os !== "") {
+        userAgent += `${os}; `;
+    } else {
+        userAgent += "Unknown OS; ";
+    }
+
+    userAgent += `${runtime}`;
+
+    if (runtimeVersion) {
+        userAgent += `; ${runtimeVersion}`;
+    } else {
+        userAgent += "; Unknown Runtime Version";
+    }
+
+    userAgent += ")";
+    return userAgent;
+}
+
+function getOsName(): string {
+    if (Platform.isNode) {
+        switch (process.platform) {
+            case "win32":
+                return "Windows NT";
+            case "darwin":
+                return "macOS";
+            case "linux":
+                return "Linux";
+            default:
+                return process.platform;
+        }
+    } else {
+        return "";
+    }
+}
+
+function getRuntimeVersion(): string | undefined {
+    if (Platform.isNode) {
+        return process.versions.node;
+    }
+    return undefined;
+}
+
+function getRuntime(): string {
+    if (Platform.isNode) {
+        return "NodeJS";
+    } else {
+        return "Browser";
     }
 }

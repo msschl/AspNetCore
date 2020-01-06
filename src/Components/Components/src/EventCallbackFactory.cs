@@ -44,11 +44,6 @@ namespace Microsoft.AspNetCore.Components
                 throw new ArgumentNullException(nameof(receiver));
             }
 
-            if (callback == null)
-            {
-                throw new ArgumentNullException(nameof(callback));
-            }
-
             return CreateCore(receiver, callback);
         }
 
@@ -64,11 +59,6 @@ namespace Microsoft.AspNetCore.Components
             if (receiver == null)
             {
                 throw new ArgumentNullException(nameof(receiver));
-            }
-
-            if (callback == null)
-            {
-                throw new ArgumentNullException(nameof(callback));
             }
 
             return CreateCore(receiver, callback);
@@ -88,11 +78,6 @@ namespace Microsoft.AspNetCore.Components
                 throw new ArgumentNullException(nameof(receiver));
             }
 
-            if (callback == null)
-            {
-                throw new ArgumentNullException(nameof(callback));
-            }
-
             return CreateCore(receiver, callback);
         }
 
@@ -110,11 +95,6 @@ namespace Microsoft.AspNetCore.Components
                 throw new ArgumentNullException(nameof(receiver));
             }
 
-            if (callback == null)
-            {
-                throw new ArgumentNullException(nameof(callback));
-            }
-
             return CreateCore(receiver, callback);
         }
 
@@ -125,14 +105,14 @@ namespace Microsoft.AspNetCore.Components
         /// <param name="callback"></param>
         /// <returns></returns>
         [EditorBrowsable(EditorBrowsableState.Never)]
-        public string Create<T>(object receiver, string callback)
+        public EventCallback<TValue> Create<TValue>(object receiver, EventCallback callback)
         {
             if (receiver == null)
             {
                 throw new ArgumentNullException(nameof(receiver));
             }
 
-            return callback;
+            return new EventCallback<TValue>(callback.Receiver, callback.Delegate);
         }
 
         /// <summary>
@@ -142,7 +122,7 @@ namespace Microsoft.AspNetCore.Components
         /// <param name="callback"></param>
         /// <returns></returns>
         [EditorBrowsable(EditorBrowsableState.Never)]
-        public EventCallback<T> Create<T>(object receiver, EventCallback<T> callback)
+        public EventCallback<TValue> Create<TValue>(object receiver, EventCallback<TValue> callback)
         {
             if (receiver == null)
             {
@@ -159,19 +139,14 @@ namespace Microsoft.AspNetCore.Components
         /// <param name="receiver">The event receiver.</param>
         /// <param name="callback">The event callback.</param>
         /// <returns>The <see cref="EventCallback"/>.</returns>
-        public EventCallback<T> Create<T>(object receiver, Action callback)
+        public EventCallback<TValue> Create<TValue>(object receiver, Action callback)
         {
             if (receiver == null)
             {
                 throw new ArgumentNullException(nameof(receiver));
             }
 
-            if (callback == null)
-            {
-                throw new ArgumentNullException(nameof(callback));
-            }
-
-            return CreateCore<T>(receiver, callback);
+            return CreateCore<TValue>(receiver, callback);
         }
 
         /// <summary>
@@ -181,19 +156,14 @@ namespace Microsoft.AspNetCore.Components
         /// <param name="receiver">The event receiver.</param>
         /// <param name="callback">The event callback.</param>
         /// <returns>The <see cref="EventCallback"/>.</returns>
-        public EventCallback<T> Create<T>(object receiver, Action<T> callback)
+        public EventCallback<TValue> Create<TValue>(object receiver, Action<TValue> callback)
         {
             if (receiver == null)
             {
                 throw new ArgumentNullException(nameof(receiver));
             }
 
-            if (callback == null)
-            {
-                throw new ArgumentNullException(nameof(callback));
-            }
-
-            return CreateCore<T>(receiver, callback);
+            return CreateCore<TValue>(receiver, callback);
         }
 
         /// <summary>
@@ -203,19 +173,14 @@ namespace Microsoft.AspNetCore.Components
         /// <param name="receiver">The event receiver.</param>
         /// <param name="callback">The event callback.</param>
         /// <returns>The <see cref="EventCallback"/>.</returns>
-        public EventCallback<T> Create<T>(object receiver, Func<Task> callback)
+        public EventCallback<TValue> Create<TValue>(object receiver, Func<Task> callback)
         {
             if (receiver == null)
             {
                 throw new ArgumentNullException(nameof(receiver));
             }
 
-            if (callback == null)
-            {
-                throw new ArgumentNullException(nameof(callback));
-            }
-
-            return CreateCore<T>(receiver, callback);
+            return CreateCore<TValue>(receiver, callback);
         }
 
         /// <summary>
@@ -225,19 +190,14 @@ namespace Microsoft.AspNetCore.Components
         /// <param name="receiver">The event receiver.</param>
         /// <param name="callback">The event callback.</param>
         /// <returns>The <see cref="EventCallback"/>.</returns>
-        public EventCallback<T> Create<T>(object receiver, Func<T, Task> callback)
+        public EventCallback<TValue> Create<TValue>(object receiver, Func<TValue, Task> callback)
         {
             if (receiver == null)
             {
                 throw new ArgumentNullException(nameof(receiver));
             }
 
-            if (callback == null)
-            {
-                throw new ArgumentNullException(nameof(callback));
-            }
-
-            return CreateCore<T>(receiver, callback);
+            return CreateCore<TValue>(receiver, callback);
         }
 
         /// <summary>
@@ -249,7 +209,7 @@ namespace Microsoft.AspNetCore.Components
         /// <param name="value"></param>
         /// <returns></returns>
         [EditorBrowsable(EditorBrowsableState.Never)]
-        public EventCallback<T> CreateInferred<T>(object receiver, Action<T> callback, T value)
+        public EventCallback<TValue> CreateInferred<TValue>(object receiver, Action<TValue> callback, TValue value)
         {
             return Create(receiver, callback);
         }
@@ -263,29 +223,19 @@ namespace Microsoft.AspNetCore.Components
         /// <param name="value"></param>
         /// <returns></returns>
         [EditorBrowsable(EditorBrowsableState.Never)]
-        public EventCallback<T> CreateInferred<T>(object receiver, Func<T, Task> callback, T value)
+        public EventCallback<TValue> CreateInferred<TValue>(object receiver, Func<TValue, Task> callback, TValue value)
         {
             return Create(receiver, callback);
         }
 
         private EventCallback CreateCore(object receiver, MulticastDelegate callback)
         {
-            if (!object.ReferenceEquals(receiver, callback.Target) && receiver is IHandleEvent handler)
-            {
-                return new EventCallback(handler, callback);
-            }
-
-            return new EventCallback(callback.Target as IHandleEvent, callback);
+            return new EventCallback(callback?.Target as IHandleEvent ?? receiver as IHandleEvent, callback);
         }
 
-        private EventCallback<T> CreateCore<T>(object receiver, MulticastDelegate callback)
+        private EventCallback<TValue> CreateCore<TValue>(object receiver, MulticastDelegate callback)
         {
-            if (!object.ReferenceEquals(receiver, callback.Target) && receiver is IHandleEvent handler)
-            {
-                return new EventCallback<T>(handler, callback);
-            }
-
-            return new EventCallback<T>(callback.Target as IHandleEvent, callback);
+            return new EventCallback<TValue>(callback?.Target as IHandleEvent ?? receiver as IHandleEvent, callback);
         }
     }
 }

@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
+using System.IO.Pipelines;
 using System.Linq;
 using System.Net.Http;
 using System.Threading;
@@ -453,7 +454,123 @@ namespace Microsoft.AspNetCore.ResponseCompression.Tests
             }
             else
             {
-                AssertLog(logMessages.Single(), LogLevel.Debug, "No response compression available for HTTPS requests. See ResponseCompressionOptions.EnableForHttps.");
+                AssertLog(logMessages.Skip(1).Single(), LogLevel.Debug, "No response compression available for HTTPS requests. See ResponseCompressionOptions.EnableForHttps.");
+            }
+        }
+
+        [Theory]
+        [InlineData(HttpsCompressionMode.Default, 100)]
+        [InlineData(HttpsCompressionMode.DoNotCompress, 100)]
+        [InlineData(HttpsCompressionMode.Compress, 30)]
+        public async Task Request_Https_CompressedIfOptIn(HttpsCompressionMode mode, int expectedLength)
+        {
+            var sink = new TestSink(
+                TestSink.EnableWithTypeName<ResponseCompressionProvider>,
+                TestSink.EnableWithTypeName<ResponseCompressionProvider>);
+            var loggerFactory = new TestLoggerFactory(sink, enabled: true);
+
+            var builder = new WebHostBuilder()
+                .ConfigureServices(services =>
+                {
+                    services.AddSingleton<ILoggerFactory>(loggerFactory);
+                    services.AddResponseCompression(options =>
+                    {
+                        options.EnableForHttps = false;
+                        options.MimeTypes = new[] { TextPlain };
+                    });
+                })
+                .Configure(app =>
+                {
+                    app.UseResponseCompression();
+                    app.Run(context =>
+                    {
+                        var feature = context.Features.Get<IHttpsCompressionFeature>();
+                        feature.Mode = mode;
+                        context.Response.ContentType = TextPlain;
+                        return context.Response.WriteAsync(new string('a', 100));
+                    });
+                });
+
+            var server = new TestServer(builder)
+            {
+                BaseAddress = new Uri("https://localhost/")
+            };
+
+            var client = server.CreateClient();
+
+            var request = new HttpRequestMessage(HttpMethod.Get, "");
+            request.Headers.AcceptEncoding.ParseAdd("gzip");
+
+            var response = await client.SendAsync(request);
+
+            Assert.Equal(expectedLength, response.Content.ReadAsByteArrayAsync().Result.Length);
+
+            var logMessages = sink.Writes.ToList();
+            if (mode == HttpsCompressionMode.Compress)
+            {
+                AssertCompressedWithLog(logMessages, "gzip");
+            }
+            else
+            {
+                AssertLog(logMessages.Skip(1).Single(), LogLevel.Debug, "No response compression available for HTTPS requests. See ResponseCompressionOptions.EnableForHttps.");
+            }
+        }
+
+        [Theory]
+        [InlineData(HttpsCompressionMode.Default, 30)]
+        [InlineData(HttpsCompressionMode.Compress, 30)]
+        [InlineData(HttpsCompressionMode.DoNotCompress, 100)]
+        public async Task Request_Https_NotCompressedIfOptOut(HttpsCompressionMode mode, int expectedLength)
+        {
+            var sink = new TestSink(
+                TestSink.EnableWithTypeName<ResponseCompressionProvider>,
+                TestSink.EnableWithTypeName<ResponseCompressionProvider>);
+            var loggerFactory = new TestLoggerFactory(sink, enabled: true);
+
+            var builder = new WebHostBuilder()
+                .ConfigureServices(services =>
+                {
+                    services.AddSingleton<ILoggerFactory>(loggerFactory);
+                    services.AddResponseCompression(options =>
+                    {
+                        options.EnableForHttps = true;
+                        options.MimeTypes = new[] { TextPlain };
+                    });
+                })
+                .Configure(app =>
+                {
+                    app.UseResponseCompression();
+                    app.Run(context =>
+                    {
+                        var feature = context.Features.Get<IHttpsCompressionFeature>();
+                        feature.Mode = mode;
+                        context.Response.ContentType = TextPlain;
+                        return context.Response.WriteAsync(new string('a', 100));
+                    });
+                });
+
+            var server = new TestServer(builder)
+            {
+                BaseAddress = new Uri("https://localhost/")
+            };
+
+            var client = server.CreateClient();
+
+            var request = new HttpRequestMessage(HttpMethod.Get, "");
+            request.Headers.AcceptEncoding.ParseAdd("gzip");
+
+            var response = await client.SendAsync(request);
+
+            Assert.Equal(expectedLength, response.Content.ReadAsByteArrayAsync().Result.Length);
+
+            var logMessages = sink.Writes.ToList();
+            if (mode == HttpsCompressionMode.DoNotCompress)
+            {
+                AssertLog(logMessages.Skip(1).Single(), LogLevel.Debug, "No response compression available for HTTPS requests. See ResponseCompressionOptions.EnableForHttps.");
+            }
+            else
+            {
+                AssertCompressedWithLog(logMessages, "gzip");
             }
         }
 
@@ -656,7 +773,7 @@ namespace Microsoft.AspNetCore.ResponseCompression.Tests
                     {
                         context.Response.Headers[HeaderNames.ContentMD5] = "MD5";
                         context.Response.ContentType = TextPlain;
-                        context.Features.Get<IHttpBufferingFeature>()?.DisableResponseBuffering();
+                        context.Features.Get<IHttpResponseBodyFeature>().DisableBuffering();
 
                         var feature = context.Features.Get<IHttpBodyControlFeature>();
                         if (feature != null)
@@ -719,7 +836,7 @@ namespace Microsoft.AspNetCore.ResponseCompression.Tests
                     {
                         context.Response.Headers[HeaderNames.ContentMD5] = "MD5";
                         context.Response.ContentType = TextPlain;
-                        context.Features.Get<IHttpBufferingFeature>()?.DisableResponseBuffering();
+                        context.Features.Get<IHttpResponseBodyFeature>().DisableBuffering();
 
                         foreach (var signal in responseReceived)
                         {
@@ -752,38 +869,6 @@ namespace Microsoft.AspNetCore.ResponseCompression.Tests
         }
 
         [Fact]
-        public async Task SendFileAsync_OnlySetIfFeatureAlreadyExists()
-        {
-            var builder = new WebHostBuilder()
-                .ConfigureServices(services =>
-                {
-                    services.AddResponseCompression();
-                })
-                .Configure(app =>
-                {
-                    app.UseResponseCompression();
-                    app.Run(context =>
-                    {
-                        context.Response.Headers[HeaderNames.ContentMD5] = "MD5";
-                        context.Response.ContentType = TextPlain;
-                        context.Response.ContentLength = 1024;
-                        var sendFile = context.Features.Get<IHttpSendFileFeature>();
-                        Assert.Null(sendFile);
-                        return Task.FromResult(0);
-                    });
-                });
-
-            var server = new TestServer(builder);
-            var client = server.CreateClient();
-
-            var request = new HttpRequestMessage(HttpMethod.Get, "");
-            request.Headers.AcceptEncoding.ParseAdd("gzip");
-
-            var response = await client.SendAsync(request);
-            response.EnsureSuccessStatusCode();
-        }
-
-        [Fact]
         public async Task SendFileAsync_DifferentContentType_NotBypassed()
         {
             FakeSendFileFeature fakeSendFile = null;
@@ -797,8 +882,8 @@ namespace Microsoft.AspNetCore.ResponseCompression.Tests
                 {
                     app.Use((context, next) =>
                     {
-                        fakeSendFile = new FakeSendFileFeature(context.Response.Body);
-                        context.Features.Set<IHttpSendFileFeature>(fakeSendFile);
+                        fakeSendFile = new FakeSendFileFeature(context.Features.Get<IHttpResponseBodyFeature>());
+                        context.Features.Set<IHttpResponseBodyFeature>(fakeSendFile);
                         return next();
                     });
                     app.UseResponseCompression();
@@ -807,7 +892,7 @@ namespace Microsoft.AspNetCore.ResponseCompression.Tests
                         context.Response.Headers[HeaderNames.ContentMD5] = "MD5";
                         context.Response.ContentType = "custom/type";
                         context.Response.ContentLength = 1024;
-                        var sendFile = context.Features.Get<IHttpSendFileFeature>();
+                        var sendFile = context.Features.Get<IHttpResponseBodyFeature>();
                         Assert.NotNull(sendFile);
                         return sendFile.SendFileAsync("testfile1kb.txt", 0, null, CancellationToken.None);
                     });
@@ -823,7 +908,7 @@ namespace Microsoft.AspNetCore.ResponseCompression.Tests
 
             CheckResponseNotCompressed(response, expectedBodyLength: 1024, sendVaryHeader: false);
 
-            Assert.True(fakeSendFile.Invoked);
+            Assert.True(fakeSendFile.SendFileInvoked);
         }
 
         [Fact]
@@ -840,8 +925,8 @@ namespace Microsoft.AspNetCore.ResponseCompression.Tests
                 {
                     app.Use((context, next) =>
                     {
-                        fakeSendFile = new FakeSendFileFeature(context.Response.Body);
-                        context.Features.Set<IHttpSendFileFeature>(fakeSendFile);
+                        fakeSendFile = new FakeSendFileFeature(context.Features.Get<IHttpResponseBodyFeature>());
+                        context.Features.Set<IHttpResponseBodyFeature>(fakeSendFile);
                         return next();
                     });
                     app.UseResponseCompression();
@@ -850,7 +935,7 @@ namespace Microsoft.AspNetCore.ResponseCompression.Tests
                         context.Response.Headers[HeaderNames.ContentMD5] = "MD5";
                         context.Response.ContentType = TextPlain;
                         context.Response.ContentLength = 1024;
-                        var sendFile = context.Features.Get<IHttpSendFileFeature>();
+                        var sendFile = context.Features.Get<IHttpResponseBodyFeature>();
                         Assert.NotNull(sendFile);
                         return sendFile.SendFileAsync("testfile1kb.txt", 0, null, CancellationToken.None);
                     });
@@ -866,7 +951,7 @@ namespace Microsoft.AspNetCore.ResponseCompression.Tests
 
             CheckResponseCompressed(response, expectedBodyLength: 34, expectedEncoding: "gzip");
 
-            Assert.False(fakeSendFile.Invoked);
+            Assert.False(fakeSendFile.SendFileInvoked);
         }
 
         [Fact]
@@ -883,8 +968,8 @@ namespace Microsoft.AspNetCore.ResponseCompression.Tests
                 {
                     app.Use((context, next) =>
                     {
-                        fakeSendFile = new FakeSendFileFeature(context.Response.Body);
-                        context.Features.Set<IHttpSendFileFeature>(fakeSendFile);
+                        fakeSendFile = new FakeSendFileFeature(context.Features.Get<IHttpResponseBodyFeature>());
+                        context.Features.Set<IHttpResponseBodyFeature>(fakeSendFile);
                         return next();
                     });
                     app.UseResponseCompression();
@@ -892,11 +977,10 @@ namespace Microsoft.AspNetCore.ResponseCompression.Tests
                     {
                         context.Response.Headers[HeaderNames.ContentMD5] = "MD5";
                         context.Response.ContentType = TextPlain;
-                        var sendFile = context.Features.Get<IHttpSendFileFeature>();
-                        Assert.NotNull(sendFile);
+                        var feature = context.Features.Get<IHttpResponseBodyFeature>();
 
                         await context.Response.WriteAsync(new string('a', 100));
-                        await sendFile.SendFileAsync("testfile1kb.txt", 0, null, CancellationToken.None);
+                        await feature.SendFileAsync("testfile1kb.txt", 0, null, CancellationToken.None);
                     });
                 });
 
@@ -910,7 +994,7 @@ namespace Microsoft.AspNetCore.ResponseCompression.Tests
 
             CheckResponseCompressed(response, expectedBodyLength: 46, expectedEncoding: "gzip");
 
-            Assert.False(fakeSendFile.Invoked);
+            Assert.False(fakeSendFile.SendFileInvoked);
         }
 
         [Theory]
@@ -989,7 +1073,6 @@ namespace Microsoft.AspNetCore.ResponseCompression.Tests
                     {
                         context.Response.Headers[HeaderNames.ContentMD5] = "MD5";
                         context.Response.ContentType = responseType;
-                        Assert.Null(context.Features.Get<IHttpSendFileFeature>());
                         addResponseAction?.Invoke(context.Response);
                         return context.Response.WriteAsync(new string('a', uncompressedBodyLength));
                     });
@@ -1062,31 +1145,33 @@ namespace Microsoft.AspNetCore.ResponseCompression.Tests
             AssertLog(logMessages.Skip(2).First(), LogLevel.Debug, $"The response will be compressed with '{provider}'.");
         }
 
-        private class FakeSendFileFeature : IHttpSendFileFeature
+        private class FakeSendFileFeature : IHttpResponseBodyFeature
         {
-            private readonly Stream _innerBody;
-
-            public FakeSendFileFeature(Stream innerBody)
+            public FakeSendFileFeature(IHttpResponseBodyFeature innerFeature)
             {
-                _innerBody = innerBody;
+                InnerFeature = innerFeature;
             }
 
-            public bool Invoked { get; set; }
+            public IHttpResponseBodyFeature InnerFeature { get; }
 
-            public async Task SendFileAsync(string path, long offset, long? count, CancellationToken cancellation)
+            public bool SendFileInvoked { get; set; }
+
+            public Stream Stream => InnerFeature.Stream;
+
+            public PipeWriter Writer => InnerFeature.Writer;
+
+            public Task CompleteAsync() => InnerFeature.CompleteAsync();
+
+            public void DisableBuffering() => InnerFeature.DisableBuffering();
+
+            public Task SendFileAsync(string path, long offset, long? count, CancellationToken cancellation)
             {
                 // This implementation should only be delegated to if compression is disabled.
-                Invoked = true;
-                using (var file = new FileStream(path, FileMode.Open))
-                {
-                    file.Seek(offset, SeekOrigin.Begin);
-                    if (count.HasValue)
-                    {
-                        throw new NotImplementedException("Not implemented for testing");
-                    }
-                    await file.CopyToAsync(_innerBody, 81920, cancellation);
-                }
+                SendFileInvoked = true;
+                return InnerFeature.SendFileAsync(path, offset, count, cancellation);
             }
+
+            public Task StartAsync(CancellationToken token = default) => InnerFeature.StartAsync(token);
         }
 
         private readonly struct EncodingTestData

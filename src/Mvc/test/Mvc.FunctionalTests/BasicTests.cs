@@ -9,8 +9,7 @@ using System.Net.Http.Headers;
 using System.Reflection;
 using System.Threading.Tasks;
 using BasicWebSite.Models;
-using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
+using System.Text.Json;
 using Xunit;
 
 namespace Microsoft.AspNetCore.Mvc.FunctionalTests
@@ -444,7 +443,7 @@ namespace Microsoft.AspNetCore.Mvc.FunctionalTests
             var response = await Client.GetStringAsync(url);
 
             // Assert
-            var result = JsonConvert.DeserializeObject<Product>(response);
+            var result = JsonSerializer.Deserialize<Product>(response, TestJsonSerializerOptionsProvider.Options);
             Assert.Equal(10, result.SampleInt);
         }
 
@@ -458,7 +457,7 @@ namespace Microsoft.AspNetCore.Mvc.FunctionalTests
             var response = await Client.GetStringAsync(url);
 
             // Assert
-            var result = JsonConvert.DeserializeObject<Product[]>(response);
+            var result = JsonSerializer.Deserialize<Product[]>(response, TestJsonSerializerOptionsProvider.Options);
             Assert.Equal(2, result.Length);
         }
 
@@ -477,16 +476,28 @@ namespace Microsoft.AspNetCore.Mvc.FunctionalTests
         {
             // Act
             var response = await Client.GetStringAsync("Home/GetAssemblyPartData");
-            var assemblyParts = JsonConvert.DeserializeObject<IList<string>>(response);
+            var assemblyParts = JsonSerializer.Deserialize<IList<string>>(response, TestJsonSerializerOptionsProvider.Options);
             var expected = new[]
             {
                 "BasicWebSite",
+                "Microsoft.AspNetCore.Components.Server",
+                "Microsoft.AspNetCore.SpaServices",
+                "Microsoft.AspNetCore.SpaServices.Extensions",
                 "Microsoft.AspNetCore.Mvc.TagHelpers",
                 "Microsoft.AspNetCore.Mvc.Razor",
             };
 
             // Assert
-            Assert.Equal(expected, assemblyParts);
+            //
+            // We don't keep track the explicit list of assemblies that show up here
+            // because this can change as we work on the product. All we care about is
+            // that BasicWebSite is first, and that everything after it is a Microsoft.
+            Assert.True(assemblyParts.Count > 2);
+            Assert.Equal("BasicWebSite", assemblyParts[0]);
+            for (var i = 1; i < assemblyParts.Count; i++)
+            {
+                Assert.StartsWith("Microsoft.", assemblyParts[i]);
+            }
         }
 
         [Fact]
@@ -536,7 +547,7 @@ namespace Microsoft.AspNetCore.Mvc.FunctionalTests
             // Assert
             await response.AssertStatusCodeAsync(HttpStatusCode.OK);
             var content = await response.Content.ReadAsStringAsync();
-            var data = JsonConvert.DeserializeObject<BindPropertyControllerData>(content);
+            var data = JsonSerializer.Deserialize<BindPropertyControllerData>(content, TestJsonSerializerOptionsProvider.Options);
 
             Assert.Equal("TestName", data.Name);
             Assert.Equal(10, data.Id);
@@ -559,7 +570,7 @@ namespace Microsoft.AspNetCore.Mvc.FunctionalTests
             // Assert
             await response.AssertStatusCodeAsync(HttpStatusCode.OK);
             var content = await response.Content.ReadAsStringAsync();
-            var data = JsonConvert.DeserializeObject<BindPropertyControllerData>(content);
+            var data = JsonSerializer.Deserialize<BindPropertyControllerData>(content, TestJsonSerializerOptionsProvider.Options);
 
             Assert.Equal(10, data.Id);
             Assert.Null(data.IdFromRoute);
@@ -581,7 +592,7 @@ namespace Microsoft.AspNetCore.Mvc.FunctionalTests
             // Assert
             await response.AssertStatusCodeAsync(HttpStatusCode.OK);
             var content = await response.Content.ReadAsStringAsync();
-            var data = JsonConvert.DeserializeObject<BindPropertyControllerData>(content);
+            var data = JsonSerializer.Deserialize<BindPropertyControllerData>(content, TestJsonSerializerOptionsProvider.Options);
 
             Assert.Null(data.BindNeverProperty);
         }
@@ -614,6 +625,27 @@ namespace Microsoft.AspNetCore.Mvc.FunctionalTests
             await response.AssertStatusCodeAsync(HttpStatusCode.OK);
             var content = await response.Content.ReadAsStringAsync();
             Assert.Equal("OnGetTestName", content);
+        }
+
+        [Fact]
+        public async Task InvalidForm_ResultsInModelError()
+        {
+            // Arrange
+            var request = new HttpRequestMessage(HttpMethod.Post, "/Home/Product");
+            request.Content = new MultipartFormDataContent();
+
+            var response = await Client.SendAsync(request);
+
+            await response.AssertStatusCodeAsync(HttpStatusCode.BadRequest);
+            var content =   await response.Content.ReadAsStringAsync();
+            var problemDetails = JsonSerializer.Deserialize<ValidationProblemDetails>(content, TestJsonSerializerOptionsProvider.Options);
+            Assert.Collection(
+                problemDetails.Errors,
+                kvp =>
+                {
+                    Assert.Empty(kvp.Key);
+                    Assert.Equal("Failed to read the request form. Form section has invalid Content-Disposition value: ", string.Join(" ", kvp.Value));
+                });
         }
 
         public class BindPropertyControllerData

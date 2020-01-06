@@ -150,8 +150,6 @@ namespace Microsoft.Extensions.DependencyInjection
             services.TryAddEnumerable(
                 ServiceDescriptor.Transient<IConfigureOptions<ApiBehaviorOptions>, ApiBehaviorOptionsSetup>());
             services.TryAddEnumerable(
-                ServiceDescriptor.Transient<IPostConfigureOptions<ApiBehaviorOptions>, ApiBehaviorOptionsSetup>());
-            services.TryAddEnumerable(
                 ServiceDescriptor.Transient<IConfigureOptions<RouteOptions>, MvcCoreRouteOptionsSetup>());
 
             //
@@ -258,7 +256,9 @@ namespace Microsoft.Extensions.DependencyInjection
             services.TryAddSingleton<IActionResultExecutor<RedirectToRouteResult>, RedirectToRouteResultExecutor>();
             services.TryAddSingleton<IActionResultExecutor<RedirectToPageResult>, RedirectToPageResultExecutor>();
             services.TryAddSingleton<IActionResultExecutor<ContentResult>, ContentResultExecutor>();
+            services.TryAddSingleton<IActionResultExecutor<JsonResult>, SystemTextJsonResultExecutor>();
             services.TryAddSingleton<IClientErrorFactory, ProblemDetailsClientErrorFactory>();
+            services.TryAddSingleton<ProblemDetailsFactory, DefaultProblemDetailsFactory>();
 
             //
             // Route Handlers
@@ -269,9 +269,10 @@ namespace Microsoft.Extensions.DependencyInjection
             //
             // Endpoint Routing / Endpoints
             //
-            services.TryAddSingleton<ActionEndpointDataSource>();
             services.TryAddSingleton<ControllerActionEndpointDataSource>();
             services.TryAddSingleton<ActionEndpointFactory>();
+            services.TryAddSingleton<DynamicControllerEndpointSelector>();
+            services.TryAddEnumerable(ServiceDescriptor.Singleton<MatcherPolicy, DynamicControllerEndpointMatcherPolicy>());
 
             //
             // Middleware pipeline filter related

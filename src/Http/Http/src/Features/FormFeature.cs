@@ -6,7 +6,6 @@ using System.IO;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.AspNetCore.Http.Internal;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.Primitives;
 using Microsoft.Net.Http.Headers;
@@ -150,15 +149,13 @@ namespace Microsoft.AspNetCore.Http.Features
                 if (HasApplicationFormContentType(contentType))
                 {
                     var encoding = FilterEncoding(contentType.Encoding);
-                    using (var formReader = new FormReader(_request.Body, encoding)
+                    var formReader = new FormPipeReader(_request.BodyReader, encoding)
                     {
                         ValueCountLimit = _options.ValueCountLimit,
                         KeyLengthLimit = _options.KeyLengthLimit,
                         ValueLengthLimit = _options.ValueLengthLimit,
-                    })
-                    {
-                        formFields = new FormCollection(await formReader.ReadFormAsync(cancellationToken));
-                    }
+                    };
+                    formFields = new FormCollection(await formReader.ReadFormAsync(cancellationToken));
                 }
                 else if (HasMultipartFormContentType(contentType))
                 {
@@ -175,8 +172,10 @@ namespace Microsoft.AspNetCore.Http.Features
                     while (section != null)
                     {
                         // Parse the content disposition here and pass it further to avoid reparsings
-                        ContentDispositionHeaderValue contentDisposition;
-                        ContentDispositionHeaderValue.TryParse(section.ContentDisposition, out contentDisposition);
+                        if (!ContentDispositionHeaderValue.TryParse(section.ContentDisposition, out var contentDisposition))
+                        {
+                            throw new InvalidDataException("Form section has invalid Content-Disposition value: " + section.ContentDisposition);
+                        }
 
                         if (contentDisposition.IsFileDisposition())
                         {

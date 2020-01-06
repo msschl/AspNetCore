@@ -76,8 +76,14 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers
         /// <inheritdoc />
         public override int Order => -1000;
 
+        /// <summary>
+        /// Gets the <see cref="IHtmlGenerator"/> used to generate the <see cref="InputTagHelper"/>'s output.
+        /// </summary>
         protected IHtmlGenerator Generator { get; }
 
+        /// <summary>
+        /// Gets the <see cref="Rendering.ViewContext"/> of the executing view.
+        /// </summary>
         [HtmlAttributeNotBound]
         [ViewContext]
         public ViewContext ViewContext { get; set; }
@@ -303,29 +309,32 @@ namespace Microsoft.AspNetCore.Mvc.TagHelpers
                        "checkbox"));
             }
 
-            // hiddenForCheckboxTag always rendered after the returned element
-            var hiddenForCheckboxTag = Generator.GenerateHiddenForCheckbox(ViewContext, modelExplorer, For.Name);
-            if (hiddenForCheckboxTag != null)
+            if (ViewContext.CheckBoxHiddenInputRenderMode != CheckBoxHiddenInputRenderMode.None)
             {
-                var renderingMode =
-                    output.TagMode == TagMode.SelfClosing ? TagRenderMode.SelfClosing : TagRenderMode.StartTag;
-                hiddenForCheckboxTag.TagRenderMode = renderingMode;
-                if (!hiddenForCheckboxTag.Attributes.ContainsKey("name") &&
-                    !string.IsNullOrEmpty(Name))
+                // hiddenForCheckboxTag always rendered after the returned element
+                var hiddenForCheckboxTag = Generator.GenerateHiddenForCheckbox(ViewContext, modelExplorer, For.Name);
+                if (hiddenForCheckboxTag != null)
                 {
-                    // The checkbox and hidden elements should have the same name attribute value. Attributes will
-                    // match if both are present because both have a generated value. Reach here in the special case
-                    // where user provided a non-empty fallback name.
-                    hiddenForCheckboxTag.MergeAttribute("name", Name);
-                }
+                    var renderingMode =
+                        output.TagMode == TagMode.SelfClosing ? TagRenderMode.SelfClosing : TagRenderMode.StartTag;
+                    hiddenForCheckboxTag.TagRenderMode = renderingMode;
+                    if (!hiddenForCheckboxTag.Attributes.ContainsKey("name") &&
+                        !string.IsNullOrEmpty(Name))
+                    {
+                        // The checkbox and hidden elements should have the same name attribute value. Attributes will
+                        // match if both are present because both have a generated value. Reach here in the special case
+                        // where user provided a non-empty fallback name.
+                        hiddenForCheckboxTag.MergeAttribute("name", Name);
+                    }
 
-                if (ViewContext.FormContext.CanRenderAtEndOfForm)
-                {
-                    ViewContext.FormContext.EndOfFormContent.Add(hiddenForCheckboxTag);
-                }
-                else
-                {
-                    output.PostElement.AppendHtml(hiddenForCheckboxTag);
+                    if (ViewContext.CheckBoxHiddenInputRenderMode == CheckBoxHiddenInputRenderMode.EndOfForm && ViewContext.FormContext.CanRenderAtEndOfForm)
+                    {
+                        ViewContext.FormContext.EndOfFormContent.Add(hiddenForCheckboxTag);
+                    }
+                    else
+                    {
+                        output.PostElement.AppendHtml(hiddenForCheckboxTag);
+                    }
                 }
             }
 

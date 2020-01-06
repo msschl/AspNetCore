@@ -7,15 +7,19 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
-
 namespace ComponentsApp.Server
 {
     public class Startup
     {
         public void ConfigureServices(IServiceCollection services)
         {
+            services.AddMvc();
             services.AddSingleton<CircuitHandler, LoggingCircuitHandler>();
-            services.AddRazorComponents<App.Startup>();
+            services.AddServerSideBlazor(options =>
+            {
+                options.DetailedErrors = true;
+            });
+
             services.AddSingleton<WeatherForecastService, DefaultWeatherForecastService>();
         }
 
@@ -27,7 +31,16 @@ namespace ComponentsApp.Server
             }
 
             app.UseStaticFiles();
-            app.UseRazorComponents<App.Startup>();
+
+            app.UseRouting();
+
+            app.UseEndpoints(endpoints =>
+            {
+                endpoints.MapRazorPages();
+                endpoints.MapControllers();
+                endpoints.MapBlazorHub();
+                endpoints.MapFallbackToPage("/_Host");
+            });
         }
     }
 }

@@ -58,8 +58,8 @@ namespace Microsoft.AspNetCore.Components
 
             // Assert
             Assert.Same(@delegate, callback.Delegate);
-            Assert.Same(anotherComponent, callback.Receiver);
-            Assert.True(callback.RequiresExplicitReceiver);
+            Assert.Same(component, callback.Receiver);
+            Assert.False(callback.RequiresExplicitReceiver);
         }
 
         [Fact]
@@ -77,6 +77,21 @@ namespace Microsoft.AspNetCore.Components
             // Assert
             Assert.Same(@delegate, callback.Delegate);
             Assert.Same(anotherComponent, callback.Receiver);
+            Assert.True(callback.RequiresExplicitReceiver);
+        }
+
+        [Fact]
+        public void Create_Action_Null()
+        {
+            // Arrange
+            var component = new EventComponent();
+
+            // Act
+            var callback = EventCallback.Factory.Create(component, (Action)null);
+
+            // Assert
+            Assert.Null(callback.Delegate);
+            Assert.Same(component, callback.Receiver);
             Assert.True(callback.RequiresExplicitReceiver);
         }
 
@@ -110,8 +125,8 @@ namespace Microsoft.AspNetCore.Components
 
             // Assert
             Assert.Same(@delegate, callback.Delegate);
-            Assert.Same(anotherComponent, callback.Receiver);
-            Assert.True(callback.RequiresExplicitReceiver);
+            Assert.Same(component, callback.Receiver);
+            Assert.False(callback.RequiresExplicitReceiver);
         }
 
         [Fact]
@@ -129,6 +144,21 @@ namespace Microsoft.AspNetCore.Components
             // Assert
             Assert.Same(@delegate, callback.Delegate);
             Assert.Same(anotherComponent, callback.Receiver);
+            Assert.True(callback.RequiresExplicitReceiver);
+        }
+
+        [Fact]
+        public void Create_ActionT_Null()
+        {
+            // Arrange
+            var component = new EventComponent();
+
+            // Act
+            var callback = EventCallback.Factory.Create(component, (Action<string>)null);
+
+            // Assert
+            Assert.Null(callback.Delegate);
+            Assert.Same(component, callback.Receiver);
             Assert.True(callback.RequiresExplicitReceiver);
         }
 
@@ -162,8 +192,8 @@ namespace Microsoft.AspNetCore.Components
 
             // Assert
             Assert.Same(@delegate, callback.Delegate);
-            Assert.Same(anotherComponent, callback.Receiver);
-            Assert.True(callback.RequiresExplicitReceiver);
+            Assert.Same(component, callback.Receiver);
+            Assert.False(callback.RequiresExplicitReceiver);
         }
 
         [Fact]
@@ -201,6 +231,21 @@ namespace Microsoft.AspNetCore.Components
         }
 
         [Fact]
+        public void Create_FuncTask_Null()
+        {
+            // Arrange
+            var component = new EventComponent();
+
+            // Act
+            var callback = EventCallback.Factory.Create(component, (Func<Task>)null);
+
+            // Assert
+            Assert.Null(callback.Delegate);
+            Assert.Same(component, callback.Receiver);
+            Assert.True(callback.RequiresExplicitReceiver);
+        }
+
+        [Fact]
         public void Create_FuncTTask_DifferentReceiver()
         {
             // Arrange
@@ -214,8 +259,8 @@ namespace Microsoft.AspNetCore.Components
 
             // Assert
             Assert.Same(@delegate, callback.Delegate);
-            Assert.Same(anotherComponent, callback.Receiver);
-            Assert.True(callback.RequiresExplicitReceiver);
+            Assert.Same(component, callback.Receiver);
+            Assert.False(callback.RequiresExplicitReceiver);
         }
 
         [Fact]
@@ -237,17 +282,18 @@ namespace Microsoft.AspNetCore.Components
         }
 
         [Fact]
-        public void CreateT_String_ReturnsInput()
+        public void Create_FuncTTask_Null()
         {
             // Arrange
             var component = new EventComponent();
-            var input = "some_js";
 
             // Act
-            var callback = EventCallback.Factory.Create<UIMouseEventArgs>(component, input);
+            var callback = EventCallback.Factory.Create(component, (Func<string, Task>)null);
 
             // Assert
-            Assert.Same(input, callback);
+            Assert.Null(callback.Delegate);
+            Assert.Same(component, callback.Receiver);
+            Assert.True(callback.RequiresExplicitReceiver);
         }
 
         [Fact]
@@ -299,8 +345,8 @@ namespace Microsoft.AspNetCore.Components
 
             // Assert
             Assert.Same(@delegate, callback.Delegate);
-            Assert.Same(anotherComponent, callback.Receiver);
-            Assert.True(callback.RequiresExplicitReceiver);
+            Assert.Same(component, callback.Receiver);
+            Assert.False(callback.RequiresExplicitReceiver);
         }
 
         [Fact]
@@ -318,6 +364,21 @@ namespace Microsoft.AspNetCore.Components
             // Assert
             Assert.Same(@delegate, callback.Delegate);
             Assert.Same(anotherComponent, callback.Receiver);
+            Assert.True(callback.RequiresExplicitReceiver);
+        }
+
+        [Fact]
+        public void CreateT_Action_Null()
+        {
+            // Arrange
+            var component = new EventComponent();
+
+            // Act
+            var callback = EventCallback.Factory.Create<string>(component, (Action)null);
+
+            // Assert
+            Assert.Null(callback.Delegate);
+            Assert.Same(component, callback.Receiver);
             Assert.True(callback.RequiresExplicitReceiver);
         }
 
@@ -351,7 +412,22 @@ namespace Microsoft.AspNetCore.Components
 
             // Assert
             Assert.Same(@delegate, callback.Delegate);
-            Assert.Same(anotherComponent, callback.Receiver);
+            Assert.Same(component, callback.Receiver);
+            Assert.False(callback.RequiresExplicitReceiver);
+        }
+
+        [Fact]
+        public void CreateT_ActionT_Null()
+        {
+            // Arrange
+            var component = new EventComponent();
+
+            // Act
+            var callback = EventCallback.Factory.Create<string>(component, (Action<string>)null);
+
+            // Assert
+            Assert.Null(callback.Delegate);
+            Assert.Same(component, callback.Receiver);
             Assert.True(callback.RequiresExplicitReceiver);
         }
 
@@ -403,8 +479,8 @@ namespace Microsoft.AspNetCore.Components
 
             // Assert
             Assert.Same(@delegate, callback.Delegate);
-            Assert.Same(anotherComponent, callback.Receiver);
-            Assert.True(callback.RequiresExplicitReceiver);
+            Assert.Same(component, callback.Receiver);
+            Assert.False(callback.RequiresExplicitReceiver);
         }
 
         [Fact]
@@ -422,6 +498,21 @@ namespace Microsoft.AspNetCore.Components
             // Assert
             Assert.Same(@delegate, callback.Delegate);
             Assert.Same(anotherComponent, callback.Receiver);
+            Assert.True(callback.RequiresExplicitReceiver);
+        }
+
+        [Fact]
+        public void CreateT_FuncTask_Null()
+        {
+            // Arrange
+            var component = new EventComponent();
+
+            // Act
+            var callback = EventCallback.Factory.Create<string>(component, (Func<Task>)null);
+
+            // Assert
+            Assert.Null(callback.Delegate);
+            Assert.Same(component, callback.Receiver);
             Assert.True(callback.RequiresExplicitReceiver);
         }
 
@@ -455,8 +546,8 @@ namespace Microsoft.AspNetCore.Components
 
             // Assert
             Assert.Same(@delegate, callback.Delegate);
-            Assert.Same(anotherComponent, callback.Receiver);
-            Assert.True(callback.RequiresExplicitReceiver);
+            Assert.Same(component, callback.Receiver);
+            Assert.False(callback.RequiresExplicitReceiver);
         }
 
         [Fact]
@@ -474,6 +565,21 @@ namespace Microsoft.AspNetCore.Components
             // Assert
             Assert.Same(@delegate, callback.Delegate);
             Assert.Same(anotherComponent, callback.Receiver);
+            Assert.True(callback.RequiresExplicitReceiver);
+        }
+
+        [Fact]
+        public void CreateT_FuncTTask_Null()
+        {
+            // Arrange
+            var component = new EventComponent();
+
+            // Act
+            var callback = EventCallback.Factory.Create<string>(component, (Func<string, Task>)null);
+
+            // Assert
+            Assert.Null(callback.Delegate);
+            Assert.Same(component, callback.Receiver);
             Assert.True(callback.RequiresExplicitReceiver);
         }
 
@@ -529,7 +635,7 @@ namespace Microsoft.AspNetCore.Components
                 return Task.CompletedTask;
             }
 
-            public void Configure(RenderHandle renderHandle)
+            public void Attach(RenderHandle renderHandle)
             {
                 throw new NotImplementedException();
             }
@@ -539,7 +645,7 @@ namespace Microsoft.AspNetCore.Components
                 throw new NotImplementedException();
             }
 
-            public Task SetParametersAsync(ParameterCollection parameters)
+            public Task SetParametersAsync(ParameterView parameters)
             {
                 throw new NotImplementedException();
             }

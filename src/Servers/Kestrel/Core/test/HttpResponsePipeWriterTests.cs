@@ -11,18 +11,11 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Core.Tests
     public class HttpResponsePipeWriterTests
     {
         [Fact]
-        public void OnReaderCompletedThrowsNotSupported()
-        {
-            var pipeWriter = CreateHttpResponsePipeWriter();
-            Assert.Throws<NotSupportedException>(() => pipeWriter.OnReaderCompleted((a, b) => { }, null));
-        }
-
-        [Fact]
         public void AdvanceAfterStopAcceptingWritesThrowsObjectDisposedException()
         {
             var pipeWriter = CreateHttpResponsePipeWriter();
             pipeWriter.StartAcceptingWrites();
-            pipeWriter.StopAcceptingWrites();
+            pipeWriter.StopAcceptingWritesAsync();
             var ex = Assert.Throws<ObjectDisposedException>(() => { pipeWriter.Advance(1); });
             Assert.Contains(CoreStrings.WritingToResponseBodyAfterResponseCompleted, ex.Message);
         }
@@ -32,7 +25,7 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Core.Tests
         {
             var pipeWriter = CreateHttpResponsePipeWriter();
             pipeWriter.StartAcceptingWrites();
-            pipeWriter.StopAcceptingWrites();
+            pipeWriter.StopAcceptingWritesAsync();
             var ex = Assert.Throws<ObjectDisposedException>(() => { pipeWriter.GetMemory(); });
             Assert.Contains(CoreStrings.WritingToResponseBodyAfterResponseCompleted, ex.Message);
         }
@@ -42,8 +35,18 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Core.Tests
         {
             var pipeWriter = CreateHttpResponsePipeWriter();
             pipeWriter.StartAcceptingWrites();
-            pipeWriter.StopAcceptingWrites();
+            pipeWriter.StopAcceptingWritesAsync();
             var ex = Assert.Throws<ObjectDisposedException>(() => { pipeWriter.GetSpan(); });
+            Assert.Contains(CoreStrings.WritingToResponseBodyAfterResponseCompleted, ex.Message);
+        }
+
+        [Fact]
+        public void CompleteAfterStopAcceptingWritesThrowsObjectDisposedException()
+        {
+            var pipeWriter = CreateHttpResponsePipeWriter();
+            pipeWriter.StartAcceptingWrites();
+            pipeWriter.StopAcceptingWritesAsync();
+            var ex = Assert.Throws<ObjectDisposedException>(() => { pipeWriter.Complete(); });
             Assert.Contains(CoreStrings.WritingToResponseBodyAfterResponseCompleted, ex.Message);
         }
 
@@ -52,7 +55,7 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Core.Tests
         {
             var pipeWriter = CreateHttpResponsePipeWriter();
             pipeWriter.StartAcceptingWrites();
-            pipeWriter.StopAcceptingWrites();
+            pipeWriter.StopAcceptingWritesAsync();
             var ex = Assert.Throws<ObjectDisposedException>(() => { pipeWriter.FlushAsync(); });
             Assert.Contains(CoreStrings.WritingToResponseBodyAfterResponseCompleted, ex.Message);
         }
@@ -62,16 +65,7 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Core.Tests
         {
             var pipeWriter = CreateHttpResponsePipeWriter();
             pipeWriter.StartAcceptingWrites();
-            pipeWriter.StopAcceptingWrites();
-            var ex = Assert.Throws<ObjectDisposedException>(() => { pipeWriter.WriteAsync(new Memory<byte>()); });
-            Assert.Contains(CoreStrings.WritingToResponseBodyAfterResponseCompleted, ex.Message);
-        }
-
-        [Fact]
-        public void CompleteCallsStopAcceptingWrites()
-        {
-            var pipeWriter = CreateHttpResponsePipeWriter();
-            pipeWriter.Complete();
+            pipeWriter.StopAcceptingWritesAsync();
             var ex = Assert.Throws<ObjectDisposedException>(() => { pipeWriter.WriteAsync(new Memory<byte>()); });
             Assert.Contains(CoreStrings.WritingToResponseBodyAfterResponseCompleted, ex.Message);
         }

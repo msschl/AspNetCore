@@ -6,13 +6,13 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Connections;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Server.IntegrationTesting;
-using Microsoft.AspNetCore.Testing.xunit;
+using Microsoft.AspNetCore.Testing;
 using Xunit;
 
-namespace Microsoft.AspNetCore.Server.IISIntegration.FunctionalTests
+namespace Microsoft.AspNetCore.Server.IIS.FunctionalTests
 {
     [SkipIfHostableWebCoreNotAvailable]
-    [OSSkipCondition(OperatingSystems.Windows, WindowsVersions.Win7, "https://github.com/aspnet/IISIntegration/issues/866")]
+    [MinimumOSVersion(OperatingSystems.Windows, WindowsVersions.Win8, SkipReason = "https://github.com/aspnet/IISIntegration/issues/866")]
     public class ResponseAbortTests : StrictTestServerTests
     {
         [ConditionalFact]
@@ -136,6 +136,31 @@ namespace Microsoft.AspNetCore.Server.IISIntegration.FunctionalTests
             }
 
             Assert.True(tokenAborted);
+        }
+
+        [ConditionalFact]
+        public async Task CancellationTokenIsUsableAfterAbortingRequest()
+        {
+            using (var testServer = await TestServer.Create(async ctx =>
+            {
+                var token = ctx.RequestAborted;
+                var originalRegistration = token.Register(() => { });
+
+                ctx.Abort();
+
+                Assert.True(token.WaitHandle.WaitOne(10000));
+                Assert.True(ctx.RequestAborted.WaitHandle.WaitOne(10000));
+                Assert.Equal(token, originalRegistration.Token);
+
+                await Task.CompletedTask;
+            }, LoggerFactory))
+            {
+                using (var connection = testServer.CreateConnection())
+                {
+                    await SendContentLength1Post(connection);
+                    await connection.WaitForConnectionClose();
+                }
+            }
         }
 
         private static async Task SendContentLength1Post(TestConnection connection)

@@ -266,7 +266,7 @@ namespace Microsoft.AspNetCore.Mvc.Localization.Test
         public void ViewLocalizer_WithCulture_ReturnsLocalizedHtmlString()
         {
             // Arrange
-            var stringLocalizer = new TestStringLocalizer();
+            var stringLocalizer = new TestStringLocalizer(new CultureInfo("fr"));
             var htmlLocalizer = new HtmlLocalizer(stringLocalizer);
             var hostingEnvironment = new Mock<IWebHostEnvironment>();
             hostingEnvironment.Setup(a => a.ApplicationName).Returns("TestApplication");
@@ -280,7 +280,7 @@ namespace Microsoft.AspNetCore.Mvc.Localization.Test
             viewLocalizer.Contextualize(viewContext);
 
             // Act
-            var actualLocalizedString = viewLocalizer.WithCulture(new CultureInfo("fr"))["John"];
+            var actualLocalizedString = htmlLocalizer["John"];
 
             // Assert
             Assert.Equal("Bonjour John", actualLocalizedString.Value);
@@ -325,6 +325,7 @@ namespace Microsoft.AspNetCore.Mvc.Localization.Test
                 return _stringLocalizer.GetAllStrings(includeParentCultures);
             }
 
+            [Obsolete("This method is obsolete. Use `CurrentCulture` and `CurrentUICulture` instead.")]
             public IHtmlLocalizer WithCulture(CultureInfo culture)
             {
                 return new TestHtmlLocalizer(new TestStringLocalizer(culture));

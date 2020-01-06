@@ -29,16 +29,12 @@ namespace Microsoft.AspNetCore.SignalR.Protocol
 
         private static readonly string ProtocolName = "messagepack";
         private static readonly int ProtocolVersion = 1;
-        private static readonly int ProtocolMinorVersion = 0;
 
         /// <inheritdoc />
         public string Name => ProtocolName;
 
         /// <inheritdoc />
         public int Version => ProtocolVersion;
-
-        /// <inheritdoc />
-        public int MinorVersion => ProtocolMinorVersion;
 
         /// <inheritdoc />
         public TransferFormat TransferFormat => TransferFormat.Binary;
@@ -141,7 +137,7 @@ namespace Microsoft.AspNetCore.SignalR.Protocol
                 case HubProtocolConstants.PingMessageType:
                     return PingMessage.Instance;
                 case HubProtocolConstants.CloseMessageType:
-                    return CreateCloseMessage(input, ref startOffset);
+                    return CreateCloseMessage(input, ref startOffset, itemCount);
                 default:
                     // Future protocol changes can add message types, old clients can ignore them
                     return null;
@@ -210,12 +206,21 @@ namespace Microsoft.AspNetCore.SignalR.Protocol
             return ApplyHeaders(headers, new StreamInvocationMessage(invocationId, target, arguments, streams));
         }
 
-        private static StreamItemMessage CreateStreamItemMessage(byte[] input, ref int offset, IInvocationBinder binder, IFormatterResolver resolver)
+        private static HubMessage CreateStreamItemMessage(byte[] input, ref int offset, IInvocationBinder binder, IFormatterResolver resolver)
         {
             var headers = ReadHeaders(input, ref offset);
             var invocationId = ReadInvocationId(input, ref offset);
-            var itemType = binder.GetStreamItemType(invocationId);
-            var value = DeserializeObject(input, ref offset, itemType, "item", resolver);
+            object value;
+            try
+            {
+                var itemType = binder.GetStreamItemType(invocationId);
+                value = DeserializeObject(input, ref offset, itemType, "item", resolver);
+            }
+            catch (Exception ex)
+            {
+                return new StreamBindingFailureMessage(invocationId, ExceptionDispatchInfo.Capture(ex));
+            }
+
             return ApplyHeaders(headers, new StreamItemMessage(invocationId, value));
         }
 
@@ -256,10 +261,23 @@ namespace Microsoft.AspNetCore.SignalR.Protocol
             return ApplyHeaders(headers, new CancelInvocationMessage(invocationId));
         }
 
-        private static CloseMessage CreateCloseMessage(byte[] input, ref int offset)
+        private static CloseMessage CreateCloseMessage(byte[] input, ref int offset, int itemCount)
         {
             var error = ReadString(input, ref offset, "error");
-            return new CloseMessage(error);
+            var allowReconnect = false;
+
+            if (itemCount > 2)
+            {
+                allowReconnect = ReadBoolean(input, ref offset, "allowReconnect");
+            }
+
+            // An empty string is still an error
+            if (error == null && !allowReconnect)
+            {
+                return CloseMessage.Empty;
+            }
+
+            return new CloseMessage(error, allowReconnect);
         }
 
         private static Dictionary<string, string> ReadHeaders(byte[] input, ref int offset)
@@ -267,14 +285,13 @@ namespace Microsoft.AspNetCore.SignalR.Protocol
             var headerCount = ReadMapLength(input, ref offset, "headers");
             if (headerCount > 0)
             {
-                // If headerCount is larger than int.MaxValue, things are going to go horribly wrong anyway :)
-                var headers = new Dictionary<string, string>((int)headerCount, StringComparer.Ordinal);
+                var headers = new Dictionary<string, string>(StringComparer.Ordinal);
 
                 for (var i = 0; i < headerCount; i++)
                 {
                     var key = ReadString(input, ref offset, $"headers[{i}].Key");
                     var value = ReadString(input, ref offset, $"headers[{i}].Value");
-                    headers[key] = value;
+                    headers.Add(key, value);
                 }
                 return headers;
             }
@@ -529,7 +546,7 @@ namespace Microsoft.AspNetCore.SignalR.Protocol
 
         private void WriteCloseMessage(CloseMessage message, Stream packer)
         {
-            MessagePackBinary.WriteArrayHeader(packer, 2);
+            MessagePackBinary.WriteArrayHeader(packer, 3);
             MessagePackBinary.WriteInt16(packer, HubProtocolConstants.CloseMessageType);
             if (string.IsNullOrEmpty(message.Error))
             {
@@ -539,6 +556,8 @@ namespace Microsoft.AspNetCore.SignalR.Protocol
             {
                 MessagePackBinary.WriteString(packer, message.Error);
             }
+
+            MessagePackBinary.WriteBoolean(packer, message.AllowReconnect);
         }
 
         private void WritePingMessage(PingMessage pingMessage, Stream packer)
@@ -570,6 +589,23 @@ namespace Microsoft.AspNetCore.SignalR.Protocol
         private static string ReadInvocationId(byte[] input, ref int offset)
         {
             return ReadString(input, ref offset, "invocationId");
+        }
+
+        private static bool ReadBoolean(byte[] input, ref int offset, string field)
+        {
+            Exception msgPackException = null;
+            try
+            {
+                var readBool = MessagePackBinary.ReadBoolean(input, offset, out var readSize);
+                offset += readSize;
+                return readBool;
+            }
+            catch (Exception e)
+            {
+                msgPackException = e;
+            }
+
+            throw new InvalidDataException($"Reading '{field}' as Boolean failed.", msgPackException);
         }
 
         private static int ReadInt32(byte[] input, ref int offset, string field)

@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.RenderTree;
 using Microsoft.AspNetCore.Components.Test.Helpers;
+using Microsoft.AspNetCore.Components.Web;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -48,11 +49,11 @@ namespace Microsoft.AspNetCore.Blazor.Build.Test
             var frames = GetRenderTree(component);
             Assert.Collection(frames,
                 frame => AssertFrame.Text(frame, "Hello", 0),
-                frame => AssertFrame.Whitespace(frame, 1),
-                frame => AssertFrame.Whitespace(frame, 2), // @((object)null)
-                frame => AssertFrame.Whitespace(frame, 3),
+                frame => AssertFrame.MarkupWhitespace(frame, 1),
+                frame => AssertFrame.TextWhitespace(frame, 2), // @((object)null)
+                frame => AssertFrame.MarkupWhitespace(frame, 3),
                 frame => AssertFrame.Text(frame, "123", 4),
-                frame => AssertFrame.Whitespace(frame, 5),
+                frame => AssertFrame.MarkupWhitespace(frame, 5),
                 frame => AssertFrame.Text(frame, new object().ToString(), 6));
         }
 
@@ -64,7 +65,7 @@ namespace Microsoft.AspNetCore.Blazor.Build.Test
                 @foreach(var item in items) {
                     @item
                 }
-                @functions {
+                @code {
                     string[] items = new[] { ""First"", ""Second"", ""Third"" };
                 }
             ");
@@ -244,22 +245,6 @@ namespace Microsoft.AspNetCore.Blazor.Build.Test
                 frame => AssertFrame.Attribute(frame, "attr", "Hello, WORLD    with number 246!", 1));
         }
 
-        // This test exercises the case where two IntermediateTokens are part of the same expression.
-        // In these case they are split by a comment.
-        [Fact]
-        public void SupportsAttributesWithInterpolatedStringExpressionValues_SplitByComment()
-        {
-            // Arrange/Act
-            var component = CompileToComponent(
-                "@{ var myValue = \"world\"; var myNum=123; }"
-                + "<elem attr=\"Hello, @myValue.ToUpperInvariant()    with number @(myN@* Blazor is Blawesome! *@um*2)!\" />");
-
-            // Assert
-            Assert.Collection(GetRenderTree(component),
-                frame => AssertFrame.Element(frame, "elem", 2, 0),
-                frame => AssertFrame.Attribute(frame, "attr", "Hello, WORLD    with number 246!", 1));
-        }
-
         [Fact]
         public void SupportsAttributesWithInterpolatedTernaryExpressionValues()
         {
@@ -307,37 +292,6 @@ namespace Microsoft.AspNetCore.Blazor.Build.Test
         }
 
         [Fact]
-        public void SupportsAttributesWithEventHandlerValues()
-        {
-            // Arrange/Act
-            var component = CompileToComponent(
-                @"<elem attr=@MyHandleEvent />
-                @functions {
-                    public bool HandlerWasCalled { get; set; } = false;
-
-                    void MyHandleEvent(Microsoft.AspNetCore.Components.UIEventArgs eventArgs)
-                    {
-                        HandlerWasCalled = true;
-                    }
-                }");
-            var handlerWasCalledProperty = component.GetType().GetProperty("HandlerWasCalled");
-
-            // Assert
-            Assert.False((bool)handlerWasCalledProperty.GetValue(component));
-            Assert.Collection(GetRenderTree(component),
-                frame => AssertFrame.Element(frame, "elem", 2, 0),
-                frame =>
-                {
-                    Assert.Equal(RenderTreeFrameType.Attribute, frame.FrameType);
-                    Assert.Equal(1, frame.Sequence);
-                    Assert.NotNull(frame.AttributeValue);
-
-                    ((Action<UIEventArgs>)frame.AttributeValue)(null);
-                    Assert.True((bool)handlerWasCalledProperty.GetValue(component));
-                });
-        }
-
-        [Fact]
         public void SupportsUsingStatements()
         {
             // Arrange/Act
@@ -355,17 +309,18 @@ namespace Microsoft.AspNetCore.Blazor.Build.Test
         public async Task SupportsTwoWayBindingForTextboxes()
         {
             // Arrange/Act
-            var component = CompileToComponent(
-                @"<input bind=""MyValue"" />
-                @functions {
-                    public string MyValue { get; set; } = ""Initial value"";
-                }");
+            var component = CompileToComponent(@"
+@using Microsoft.AspNetCore.Components.Web
+<input @bind=""MyValue"" />
+@code {
+    public string MyValue { get; set; } = ""Initial value"";
+}");
             var myValueProperty = component.GetType().GetProperty("MyValue");
 
             var renderer = new TestRenderer();
 
             // Assert
-            Action<UIEventArgs> setter = null;
+            EventCallback setter = default;
             var frames = GetRenderTree(renderer, component);
             Assert.Collection(frames,
                 frame => AssertFrame.Element(frame, "input", 3, 0),
@@ -373,11 +328,16 @@ namespace Microsoft.AspNetCore.Blazor.Build.Test
                 frame =>
                 {
                     AssertFrame.Attribute(frame, "onchange", 2);
-                    setter = Assert.IsType<Action<UIEventArgs>>(frame.AttributeValue);
+                    setter = Assert.IsType<EventCallback>(frame.AttributeValue);
                 });
 
             // Trigger the change event to show it updates the property
-            await renderer.Invoke(() => setter(new UIChangeEventArgs { Value = "Modified value", }));
+            //
+            // This should always complete synchronously.
+            var task = renderer.Dispatcher.InvokeAsync(() => setter.InvokeAsync(new ChangeEventArgs { Value = "Modified value", }));
+            Assert.Equal(TaskStatus.RanToCompletion, task.Status);
+            await task;
+
             Assert.Equal("Modified value", myValueProperty.GetValue(component));
         }
 
@@ -385,17 +345,18 @@ namespace Microsoft.AspNetCore.Blazor.Build.Test
         public async Task SupportsTwoWayBindingForTextareas()
         {
             // Arrange/Act
-            var component = CompileToComponent(
-                @"<textarea bind=""MyValue"" ></textarea>
-                @functions {
-                    public string MyValue { get; set; } = ""Initial value"";
-                }");
+            var component = CompileToComponent(@"
+@using Microsoft.AspNetCore.Components.Web
+<textarea @bind=""MyValue"" ></textarea>
+@code {
+    public string MyValue { get; set; } = ""Initial value"";
+}");
             var myValueProperty = component.GetType().GetProperty("MyValue");
 
             var renderer = new TestRenderer();
 
             // Assert
-            Action<UIEventArgs> setter = null;
+            EventCallback setter = default;
             var frames = GetRenderTree(renderer, component);
             Assert.Collection(frames,
                 frame => AssertFrame.Element(frame, "textarea", 3, 0),
@@ -403,11 +364,16 @@ namespace Microsoft.AspNetCore.Blazor.Build.Test
                 frame =>
                 {
                     AssertFrame.Attribute(frame, "onchange", 2);
-                    setter = Assert.IsType<Action<UIEventArgs>>(frame.AttributeValue);
+                    setter = Assert.IsType<EventCallback>(frame.AttributeValue);
                 });
 
             // Trigger the change event to show it updates the property
-            await renderer.Invoke(() => setter(new UIChangeEventArgs() { Value = "Modified value", }));
+            //
+            // This should always complete synchronously.
+            var task = renderer.Dispatcher.InvokeAsync(() => setter.InvokeAsync(new ChangeEventArgs { Value = "Modified value", }));
+            Assert.Equal(TaskStatus.RanToCompletion, task.Status);
+            await task;
+
             Assert.Equal("Modified value", myValueProperty.GetValue(component));
         }
 
@@ -415,17 +381,18 @@ namespace Microsoft.AspNetCore.Blazor.Build.Test
         public async Task SupportsTwoWayBindingForDateValues()
         {
             // Arrange/Act
-            var component = CompileToComponent(
-                @"<input bind=""MyDate"" />
-                @functions {
-                    public DateTime MyDate { get; set; } = new DateTime(2018, 3, 4, 1, 2, 3);
-                }");
+            var component = CompileToComponent(@"
+@using Microsoft.AspNetCore.Components.Web
+<input @bind=""MyDate"" />
+@code {
+    public DateTime MyDate { get; set; } = new DateTime(2018, 3, 4, 1, 2, 3);
+}");
             var myDateProperty = component.GetType().GetProperty("MyDate");
 
             var renderer = new TestRenderer();
 
             // Assert
-            Action<UIEventArgs> setter = null;
+            EventCallback setter = default;
             var frames = GetRenderTree(renderer, component);
             Assert.Collection(frames,
                 frame => AssertFrame.Element(frame, "input", 3, 0),
@@ -433,12 +400,18 @@ namespace Microsoft.AspNetCore.Blazor.Build.Test
                 frame =>
                 {
                     AssertFrame.Attribute(frame, "onchange", 2);
-                    setter = Assert.IsType<Action<UIEventArgs>>(frame.AttributeValue);
+                    setter = Assert.IsType<EventCallback>(frame.AttributeValue);
                 });
 
             // Trigger the change event to show it updates the property
+            // Trigger the change event to show it updates the property
+            //
+            // This should always complete synchronously.
             var newDateValue = new DateTime(2018, 3, 5, 4, 5, 6);
-            await renderer.Invoke(() => setter(new UIChangeEventArgs() { Value = newDateValue.ToString(), }));
+            var task = renderer.Dispatcher.InvokeAsync(() => setter.InvokeAsync(new ChangeEventArgs { Value = newDateValue.ToString(), }));
+            Assert.Equal(TaskStatus.RanToCompletion, task.Status);
+            await task;
+
             Assert.Equal(newDateValue, myDateProperty.GetValue(component));
         }
 
@@ -447,17 +420,18 @@ namespace Microsoft.AspNetCore.Blazor.Build.Test
         {
             // Arrange/Act
             var testDateFormat = "ddd yyyy-MM-dd";
-            var component = CompileToComponent(
-                $@"<input bind=""@MyDate"" format-value=""{testDateFormat}"" />
-                @functions {{
-                    public DateTime MyDate {{ get; set; }} = new DateTime(2018, 3, 4);
-                }}");
+            var component = CompileToComponent($@"
+@using Microsoft.AspNetCore.Components.Web
+<input @bind=""@MyDate"" @bind:format=""{testDateFormat}"" />
+@code {{
+    public DateTime MyDate {{ get; set; }} = new DateTime(2018, 3, 4);
+}}");
             var myDateProperty = component.GetType().GetProperty("MyDate");
 
             var renderer = new TestRenderer();
 
             // Assert
-            Action<UIEventArgs> setter = null;
+            EventCallback setter = default;
             var frames = GetRenderTree(renderer, component);
             Assert.Collection(frames,
                 frame => AssertFrame.Element(frame, "input", 3, 0),
@@ -465,11 +439,16 @@ namespace Microsoft.AspNetCore.Blazor.Build.Test
                 frame =>
                 {
                     AssertFrame.Attribute(frame, "onchange", 2);
-                    setter = Assert.IsType<Action<UIEventArgs>>(frame.AttributeValue);
+                    setter = Assert.IsType<EventCallback>(frame.AttributeValue);
                 });
 
             // Trigger the change event to show it updates the property
-            await renderer.Invoke(() => setter(new UIChangeEventArgs() { Value = new DateTime(2018, 3, 5).ToString(testDateFormat), }));
+            //
+            // This should always complete synchronously.
+            var task = renderer.Dispatcher.InvokeAsync(() => setter.InvokeAsync(new ChangeEventArgs { Value = new DateTime(2018, 3, 5).ToString(testDateFormat), }));
+            Assert.Equal(TaskStatus.RanToCompletion, task.Status);
+            await task;
+
             Assert.Equal(new DateTime(2018, 3, 5), myDateProperty.GetValue(component));
         }
 
@@ -485,8 +464,7 @@ namespace Microsoft.AspNetCore.Blazor.Build.Test
 
             // Assert
             Assert.Collection(frames,
-                frame => AssertFrame.Element(frame, "button", 2, 0),
-                frame => AssertFrame.Attribute(frame, "onclick", "function(){console.log('hello');};", 1));
+                frame => AssertFrame.Markup(frame, "<button onclick=\"function(){console.log('hello');};\"></button>", 0));
         }
 
         [Fact]
@@ -494,8 +472,9 @@ namespace Microsoft.AspNetCore.Blazor.Build.Test
         {
             // Arrange
             var component = CompileToComponent(@"
-<button onclick=""@(x => Clicked = true)"" />
-@functions {
+@using Microsoft.AspNetCore.Components.Web
+<button @onclick=""x => Clicked = true"" />
+@code {
     public bool Clicked { get; set; }
 }");
 
@@ -513,10 +492,10 @@ namespace Microsoft.AspNetCore.Blazor.Build.Test
                 {
                     AssertFrame.Attribute(frame, "onclick", 1);
 
-                    var func = Assert.IsType<Action<UIMouseEventArgs>>(frame.AttributeValue);
+                    var func = Assert.IsType<Action<MouseEventArgs>>(frame.AttributeValue);
                     Assert.False((bool)clicked.GetValue(component));
 
-                    func(new UIMouseEventArgs());
+                    func(new MouseEventArgs());
                     Assert.True((bool)clicked.GetValue(component));
                 });
         }
@@ -526,9 +505,10 @@ namespace Microsoft.AspNetCore.Blazor.Build.Test
         {
             // Arrange
             var component = CompileToComponent(@"
-<button onclick=""@OnClick"" />
-@functions {
-    public void OnClick(UIMouseEventArgs e) { Clicked = true; }
+@using Microsoft.AspNetCore.Components.Web
+<button @onclick=""OnClick"" />
+@code {
+    public void OnClick(MouseEventArgs e) { Clicked = true; }
     public bool Clicked { get; set; }
 }");
 
@@ -540,35 +520,40 @@ namespace Microsoft.AspNetCore.Blazor.Build.Test
             var frames = GetRenderTree(renderer, component);
 
             // Assert
-            Assert.Collection(frames,
+            Action<MouseEventArgs> func = default; // Since this is a method group, we don't need to create an EventCallback
+            Assert.Collection(
+                frames,
                 frame => AssertFrame.Element(frame, "button", 2, 0),
                 frame =>
                 {
                     AssertFrame.Attribute(frame, "onclick", 1);
 
-                    var func = Assert.IsType<Action<UIMouseEventArgs>>(frame.AttributeValue);
+                    func = Assert.IsType<Action<MouseEventArgs>>(frame.AttributeValue);
                     Assert.False((bool)clicked.GetValue(component));
 
-                    func(new UIMouseEventArgs());
-                    Assert.True((bool)clicked.GetValue(component));
+
                 });
+
+            func.Invoke(new MouseEventArgs());
+            Assert.True((bool)clicked.GetValue(component));
         }
 
         [Fact]
         public async Task SupportsTwoWayBindingForBoolValues()
         {
             // Arrange/Act
-            var component = CompileToComponent(
-                @"<input bind=""MyValue"" />
-                @functions {
-                    public bool MyValue { get; set; } = true;
-                }");
+            var component = CompileToComponent(@"
+@using Microsoft.AspNetCore.Components.Web
+<input @bind=""MyValue"" />
+@code {
+    public bool MyValue { get; set; } = true;
+}");
             var myValueProperty = component.GetType().GetProperty("MyValue");
 
             var renderer = new TestRenderer();
 
             // Assert
-            Action<UIEventArgs> setter = null;
+            EventCallback setter = default;
             var frames = GetRenderTree(renderer, component);
             Assert.Collection(frames,
                 frame => AssertFrame.Element(frame, "input", 3, 0),
@@ -576,11 +561,16 @@ namespace Microsoft.AspNetCore.Blazor.Build.Test
                 frame =>
                 {
                     AssertFrame.Attribute(frame, "onchange", 2);
-                    setter = Assert.IsType<Action<UIEventArgs>>(frame.AttributeValue);
+                    setter = Assert.IsType<EventCallback>(frame.AttributeValue);
                 });
 
             // Trigger the change event to show it updates the property
-            await renderer.Invoke(() => setter(new UIChangeEventArgs() { Value = false, }));
+            //
+            // This should always complete synchronously.
+            var task =  renderer.Dispatcher.InvokeAsync(() => setter.InvokeAsync(new ChangeEventArgs() { Value = false, }));
+            Assert.Equal(TaskStatus.RanToCompletion, task.Status);
+            await task;
+
             Assert.False((bool)myValueProperty.GetValue(component));
         }
 
@@ -589,17 +579,18 @@ namespace Microsoft.AspNetCore.Blazor.Build.Test
         {
             // Arrange/Act
             var myEnumType = FullTypeName<MyEnum>();
-            var component = CompileToComponent(
-                $@"<input bind=""MyValue"" />
-                @functions {{
-                    public {myEnumType} MyValue {{ get; set; }} = {myEnumType}.{nameof(MyEnum.FirstValue)};
-                }}");
+            var component = CompileToComponent($@"
+@using Microsoft.AspNetCore.Components.Web
+<input @bind=""MyValue"" />
+@code {{
+    public {myEnumType} MyValue {{ get; set; }} = {myEnumType}.{nameof(MyEnum.FirstValue)};
+}}");
             var myValueProperty = component.GetType().GetProperty("MyValue");
 
             var renderer = new TestRenderer();
 
             // Assert
-            Action<UIEventArgs> setter = null;
+            EventCallback setter = default;
             var frames = GetRenderTree(renderer, component);
             Assert.Collection(frames,
                 frame => AssertFrame.Element(frame, "input", 3, 0),
@@ -607,11 +598,16 @@ namespace Microsoft.AspNetCore.Blazor.Build.Test
                 frame =>
                 {
                     AssertFrame.Attribute(frame, "onchange", 2);
-                    setter = Assert.IsType<Action<UIEventArgs>>(frame.AttributeValue);
+                    setter = Assert.IsType<EventCallback>(frame.AttributeValue);
                 });
 
             // Trigger the change event to show it updates the property
-            await renderer.Invoke(() => setter(new UIChangeEventArgs() { Value = MyEnum.SecondValue.ToString(), }));
+            //
+            // This should always complete synchronously.
+            var task = renderer.Dispatcher.InvokeAsync(() => setter.InvokeAsync(new ChangeEventArgs { Value = MyEnum.SecondValue.ToString(), }));
+            Assert.Equal(TaskStatus.RanToCompletion, task.Status);
+            await task;
+
             Assert.Equal(MyEnum.SecondValue, (MyEnum)myValueProperty.GetValue(component));
         }
 
@@ -676,7 +672,7 @@ namespace Microsoft.AspNetCore.Blazor.Build.Test
             var component = CompileToComponent(@"
 @(Repeat(@<div>@(""Hello, World!"".ToLower())</div>, 3))
 
-@functions {
+@code {
     RenderFragment Repeat(RenderFragment template, int count)
     {
         return (b) =>
@@ -714,7 +710,7 @@ namespace Microsoft.AspNetCore.Blazor.Build.Test
             var component = CompileToComponent(@"
 @(Repeat((context) => @<div>@context.ToLower()</div>, ""Hello, World!"", 3))
 
-@functions {
+@code {
     RenderFragment Repeat<T>(RenderFragment<T> template, T value, int count)
     {
         return (b) =>

@@ -66,7 +66,7 @@ namespace Microsoft.AspNetCore.Blazor.Build
             Assert.FileExists(result, blazorPublishDirectory, "dist", "index.html");
 
             // Verify static web assets from referenced projects are copied.
-            // Uncomment once https://github.com/aspnet/AspNetCore/issues/17426 is resolved.
+            // Uncomment once https://github.com/dotnet/aspnetcore/issues/17426 is resolved.
             // Assert.FileExists(result, blazorPublishDirectory, "dist", "_content", "RazorClassLibrary", "wwwroot", "exampleJsInterop.js");
             // Assert.FileExists(result, blazorPublishDirectory, "dist", "_content", "RazorClassLibrary", "styles.css");
 
@@ -110,6 +110,35 @@ namespace Microsoft.AspNetCore.Blazor.Build
 
             // Verify web.config
             Assert.FileExists(result, publishDirectory, "web.config");
+        }
+
+        [Fact]
+        public async Task Publish_SatelliteAssemblies_AreCopiedToBuildOutput()
+        {
+            // Arrange
+            using var project = ProjectDirectory.Create("standalone", additionalProjects: new[] { "razorclasslibrary", "classlibrarywithsatelliteassemblies" });
+            project.AddProjectFileContent(
+@"
+<PropertyGroup>
+    <DefineConstants>$(DefineConstants);REFERENCE_classlibrarywithsatelliteassemblies</DefineConstants>
+</PropertyGroup>
+<ItemGroup>
+    <ProjectReference Include=""..\classlibrarywithsatelliteassemblies\classlibrarywithsatelliteassemblies.csproj"" />
+</ItemGroup>");
+
+            var result = await MSBuildProcessManager.DotnetMSBuild(project, "Publish", args: "/restore");
+
+            Assert.BuildPassed(result);
+
+            var publishDirectory = project.PublishOutputDirectory;
+            var blazorPublishDirectory = Path.Combine(publishDirectory, Path.GetFileNameWithoutExtension(project.ProjectFilePath));
+
+            Assert.FileExists(result, blazorPublishDirectory, "dist", "_framework", "_bin", "Microsoft.CodeAnalysis.CSharp.dll");
+            Assert.FileExists(result, blazorPublishDirectory, "dist", "_framework", "_bin", "fr", "Microsoft.CodeAnalysis.CSharp.resources.dll"); // Verify satellite assemblies are present in the build output.
+
+            var bootJsonPath = Path.Combine(blazorPublishDirectory, "dist", "_framework", "blazor.boot.json");
+            Assert.FileContains(result, bootJsonPath, "\"Microsoft.CodeAnalysis.CSharp.dll\"");
+            Assert.FileContains(result, bootJsonPath, "\"fr\\/Microsoft.CodeAnalysis.CSharp.resources.dll\"");
         }
 
         [Fact]
@@ -181,7 +210,7 @@ namespace Microsoft.AspNetCore.Blazor.Build
             Assert.FileExists(result, blazorPublishDirectory, "dist", "index.html");
 
             // Verify static web assets from referenced projects are copied.
-            // Uncomment once https://github.com/aspnet/AspNetCore/issues/17426 is resolved.
+            // Uncomment once https://github.com/dotnet/aspnetcore/issues/17426 is resolved.
             // Assert.FileExists(result, publishDirectory, "wwwroot", "_content", "RazorClassLibrary", "wwwroot", "exampleJsInterop.js");
             // Assert.FileExists(result, publishDirectory, "wwwroot", "_content", "RazorClassLibrary", "styles.css");
 
